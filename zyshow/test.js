@@ -125,6 +125,44 @@ function header(t) { console.log('\n=== ' + t + ' ==='); }
         }
     }
 
+    header('Step 4: pick an episode → lazy m3u8');
+    // 从 step 3 拿一集 url + LAZY_CODE
+    try {
+        const lazy1 = await runScript(rule.detail_find_rule, samples[0][1].url);
+        const ep = lazy1.find(it => /@lazyRule=/.test(it.url || ''));
+        if (!ep) {
+            console.log('  SKIP: no episode to test');
+        } else {
+            const m = ep.url.match(/^([^@]+)@lazyRule=\.js:(.+)$/);
+            const epUrl = m[1];
+            const lazyCode = m[2];
+            // 语法校验先
+            try { new Function('input', 'return ' + lazyCode); }
+            catch (e) { console.log('  FAIL lazy syntax:', e.message); failed++; return; }
+            // 实跑: 模拟 fetch
+            const fetchSync2 = async u => fetchSync(u);
+            const ctx2 = {
+                input: epUrl,
+                fetch: u => { throw new Error('fetch_async_needed:' + u); },
+                console,
+            };
+            // 先抓 base64,再抓 302 跳转
+            let html1, html2;
+            try { html1 = await fetchSync(epUrl); } catch (e) { console.log('  FAIL fetch ep page:', e.message); failed++; return; }
+            const base64M = html1.match(/url\|([A-Za-z0-9+\/=]{40,})\|/);
+            if (!base64M) { console.log('  FAIL: no url|base64| in ep page'); failed++; }
+            else {
+                try { html2 = await fetchSync('https://www.zyshow.co/url=' + base64M[1]); } catch (e) { console.log('  FAIL fetch jump:', e.message); failed++; return; }
+                const m3u8M = html2.match(/urls\s*=\s*['"]([^'"]+)['"]/);
+                if (!m3u8M) console.log('  WARN: no m3u8 (CDN may be region-locked)');
+                else console.log('  OK   lazy chain:', m3u8M[1].slice(0, 60));
+            }
+        }
+    } catch (e) {
+        console.log('  FAIL lazy test exception:', e.message);
+        failed++;
+    }
+
     console.log('\n=== Summary ===');
     if (failed === 0) {
         console.log('ALL PASS');

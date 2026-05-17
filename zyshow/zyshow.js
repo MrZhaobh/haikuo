@@ -12,15 +12,18 @@
  * class_url 用 query (?cat=th) 区分顶层分类, 站点不识别 query 故返回同一首页 HTML
  */
 
-// 嗅探 lazy: 输入是单集页 URL, 输出 m3u8 直链
+// 嗅探 lazy: 输入是单集页 URL, 输出 m3u8 直链.
+// IIFE 包一层是因为海阔 lazyRule 体当表达式执行, 顶层 return 触发 JSEngine#66
 var LAZY_CODE =
+    "(function(){" +
     "var html = fetch(input, {headers:{'User-Agent':'MOBILE_UA'}}); " +
     "var m = html.match(/url\\|([A-Za-z0-9+\\/=]{40,})\\|/); " +
     "if (!m) return 'hiker://empty##未抓取到 base64'; " +
     "var jumpUrl = 'https://www.zyshow.co/url=' + m[1]; " +
     "var ck = ''; try { ck = fetch(jumpUrl, {headers:{'User-Agent':'MOBILE_UA'}}); } catch (e) { return 'hiker://empty##跳转失败 ' + e.message; } " +
     "var m2 = (ck||'').match(/urls\\s*=\\s*['\"]([^'\"]+)['\"]/); " +
-    "m2 ? m2[1] + ';{Referer@https://sc.zyshow.net/}' : 'hiker://empty##未抓取到 m3u8'";
+    "return m2 ? m2[1] + ';{Referer@https://sc.zyshow.net/}' : 'hiker://empty##未抓取到 m3u8';" +
+    "})()";
 
 // 7 个大分类 (映射到首页 dropdown-toggle 标题文本)
 var CAT_SLUGS  = ['th', 'zm', 'jx', 'ss', 'ms', 'yx', 'yl'];
