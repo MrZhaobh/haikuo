@@ -1,0 +1,1 @@
+海阔视界规则分享，当前分享的是：搜索引擎￥search_rule_v2￥{"title":"11点热炒店","author":"claude","version":0,"search_url":"","searchFind":"","detail_col_type":"movie_1","detail_find_rule":"*","sdetail_col_type":"movie_1","sdetail_find_rule":"*","ua":"mobile","preRule":""}
