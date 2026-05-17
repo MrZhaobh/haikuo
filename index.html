@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sugoideas 海阔规则导入</title>
+<style>
+body { font-family: -apple-system, "Microsoft YaHei", sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; line-height: 1.6; background: #fafafa; }
+h2 { color: #ec2d7a; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-top: 32px; }
+.btn { display: inline-block; padding: 10px 18px; margin: 4px 0; background: #ec2d7a; color: white; text-decoration: none; border-radius: 6px; font-size: 16px; cursor: pointer; border: none; }
+.btn:active { background: #b71f5d; }
+pre, textarea { background: #f0f0f0; padding: 8px; border: 1px solid #ccc; border-radius: 4px; overflow-x: auto; word-break: break-all; white-space: pre-wrap; font-size: 12px; width: 100%; box-sizing: border-box; }
+textarea { height: 200px; font-family: monospace; }
+ol li { margin: 6px 0; }
+.hint { color: #666; font-size: 14px; }
+.tag { display: inline-block; padding: 2px 8px; background: #ec2d7a; color: white; border-radius: 3px; font-size: 12px; margin-right: 6px; }
+code { background: #f0f0f0; padding: 1px 6px; border-radius: 3px; font-size: 13px; }
+.box-rec { background: #fff7fa; border: 2px solid #ec2d7a; padding: 12px; border-radius: 8px; }
+</style>
+</head>
+<body>
+
+<h1>sugoideas 海阔规则导入</h1>
+<p class="hint">推荐 ① 全功能小程序 — 单口令搞定搜索 + 分类 + 详情。</p>
+
+<div class="box-rec">
+<h2>① 全功能小程序 (推荐 — 单口令)</h2>
+<p>新版海阔识别格式 <code>小程序￥home_rule_v2￥base64://...</code>。带搜索框、分类切换、详情多集 + Part 切换，全部一个口令搞定。导入位置: <b>我的 → 长按"我的小程序"标题 → 添加小程序 → 粘贴板</b>:</p>
+<textarea id="token-quick" readonly style="height:120px"></textarea>
+<button class="btn" onclick="copyEl('token-quick')">📋 复制小程序口令</button>
+</div>
+
+<h2>② 备用 — 首页频道</h2>
+<p>如果 ① 不识别，这条用 <code>首页频道￥home_rule_v2</code> 类型，已验证可用：</p>
+<textarea id="token-home" readonly style="height:120px"></textarea>
+<button class="btn" onclick="copyEl('token-home')">📋 复制首页频道口令</button>
+
+<h2>③ 备用 — 视频规则</h2>
+<textarea id="token-video" readonly style="height:120px"></textarea>
+<button class="btn" onclick="copyEl('token-video')">📋 复制视频口令</button>
+
+<h2>④ 备用 — 搜索引擎</h2>
+<textarea id="token-search" readonly style="height:120px"></textarea>
+<button class="btn" onclick="copyEl('token-search')">📋 复制搜索引擎口令</button>
+
+<h2>⑤ 远程订阅</h2>
+<ol>
+<li>海阔 → 设置 → 影视设置 → 规则订阅源</li>
+<li>URL 填: <pre id="sub-url"></pre></li>
+</ol>
+
+<h2>⑥ 直接下载</h2>
+<a class="btn" href="clipboard.json" download>clipboard.json</a>
+<a class="btn" href="single.json" download>single.json</a>
+<a class="btn" href="sugoideas.js" download>sugoideas.js</a>
+<a class="btn" href="mini.js" download>mini.js (小程序源码)</a>
+
+<h2>⑦ 旧版分享文本</h2>
+<textarea id="share-text" readonly style="height:120px"></textarea>
+<button class="btn" onclick="copyEl('share-text')">📋 复制</button>
+
+<h2>排错</h2>
+<ul>
+<li>海阔无法访问 sugoideas.com → 确认 Clash/代理已开 (TUN/增强模式)</li>
+<li>导入后无内容 → 重启海阔，下拉刷新</li>
+<li>① 不识别 → 试 ② 首页频道；都不行 → ⑤ 远程订阅或 ⑥ 文件导入</li>
+</ul>
+
+<script>
+const host = location.host;
+const subUrl = location.protocol + '//' + host + '/clipboard.json';
+document.getElementById('sub-url').textContent = subUrl;
+
+async function loadAndShow(file, elemId) {
+    const r = await fetch(file);
+    const txt = await r.text();
+    document.getElementById(elemId).value = txt;
+}
+loadAndShow('token-quick.txt',  'token-quick');
+loadAndShow('token-home.txt',   'token-home');
+loadAndShow('token-video.txt',  'token-video');
+loadAndShow('token-search.txt', 'token-search');
+loadAndShow('share.txt',        'share-text');
+
+function copyEl(id) {
+    const t = document.getElementById(id);
+    t.select();
+    document.execCommand('copy');
+    alert('已复制 (' + t.value.length + ' 字符)');
+}
+</script>
+</body>
+</html>
