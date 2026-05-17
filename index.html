@@ -50,10 +50,10 @@ code { background: #f0f0f0; padding: 1px 6px; border-radius: 3px; font-size: 13p
 </ol>
 
 <h2>⑥ 直接下载</h2>
-<a class="btn" href="clipboard.json" download>clipboard.json</a>
-<a class="btn" href="single.json" download>single.json</a>
-<a class="btn" href="sugoideas.js" download>sugoideas.js</a>
-<a class="btn" href="mini.js" download>mini.js (小程序源码)</a>
+<a class="btn" href="clipboard.json" download>clipboard.json (聚合订阅)</a>
+<a class="btn" href="sugoideas/clipboard.json" download>sugoideas/clipboard.json</a>
+<a class="btn" href="sugoideas/single.json" download>single.json</a>
+<a class="btn" href="sugoideas/sugoideas.js" download>sugoideas.js</a>
 
 <h2>⑦ 旧版分享文本</h2>
 <textarea id="share-text" readonly style="height:120px"></textarea>
@@ -76,11 +76,11 @@ async function loadAndShow(file, elemId) {
     const txt = await r.text();
     document.getElementById(elemId).value = txt;
 }
-loadAndShow('token-quick.txt',  'token-quick');
-loadAndShow('token-home.txt',   'token-home');
-loadAndShow('token-video.txt',  'token-video');
-loadAndShow('token-search.txt', 'token-search');
-loadAndShow('share.txt',        'share-text');
+loadAndShow('sugoideas/token-quick.txt',  'token-quick');
+loadAndShow('sugoideas/token-home.txt',   'token-home');
+loadAndShow('sugoideas/token-video.txt',  'token-video');
+loadAndShow('sugoideas/token-search.txt', 'token-search');
+loadAndShow('sugoideas/share.txt',        'share-text');
 
 function copyEl(id) {
     const t = document.getElementById(id);

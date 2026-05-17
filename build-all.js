@@ -13,7 +13,7 @@ const fs = require('fs');
 const path = require('path');
 
 const SITES = [
-    { name: 'sugoideas', file: 'sugoideas-rules.json' },   // sugo (compile.js 输出)
+    { name: 'sugoideas', file: 'sugoideas/clipboard.json' }, // sugo (compile.js 输出)
     { name: 'nivod',     file: 'nivod/clipboard.json' },
     { name: 'mtyy',      file: 'mtyy/clipboard.json' },    // 麦田影院 (decode.js 由 SQLite 备份导出)
     { name: 'zyshow11',  file: 'zyshow11/clipboard.json' }, // 11点热炒店 台综 (zyshow.co)
