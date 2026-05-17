@@ -1,40 +1,32 @@
+// 用 vm.Script (脚本模式,等价海阔 JSEngine) 检测顶层 return / 语法错误
 const fs = require('fs');
+const vm = require('vm');
 const t = fs.readFileSync('token-quick.txt', 'utf8');
 const m = t.match(/base64:\/\/@([^@]+)@(.+)$/);
 const obj = JSON.parse(Buffer.from(m[2], 'base64').toString('utf8'));
 
-function scan(name, code) {
-    if (!code) return;
+function check(name, code) {
+    if (!code) { console.log(name, 'EMPTY'); return; }
     const body = code.replace(/^js:\n?/, '');
-    let depth = 0;
-    let inStr = false, strCh = '';
-    const returns = [];
-    for (let i = 0; i < body.length; i++) {
-        const c = body[i];
-        if (inStr) {
-            if (c === '\\') { i++; continue; }
-            if (c === strCh) inStr = false;
-            continue;
-        }
-        if (c === '"' || c === "'" || c === '`') { inStr = true; strCh = c; continue; }
-        if (c === '/' && body[i+1] === '/') { while (i < body.length && body[i] !== '\n') i++; continue; }
-        if (c === '/' && body[i+1] === '*') { i += 2; while (i < body.length-1 && !(body[i] === '*' && body[i+1] === '/')) i++; i++; continue; }
-        if (c === '{') depth++;
-        else if (c === '}') depth--;
-        else if (c === 'r' && body.substr(i, 6) === 'return' && !/[\w.]/.test(body[i-1]||' ') && !/[\w]/.test(body[i+6]||' ')) {
-            if (depth === 0) {
-                const before = body.substring(0, i);
-                const ln = before.split('\n').length;
-                returns.push({line: ln, ctx: body.substring(Math.max(0,i-30), Math.min(body.length, i+60)).replace(/\n/g,'\\n')});
+    try {
+        new vm.Script(body, { filename: name });
+        console.log(name, 'OK (' + body.length + 'B)');
+    } catch (e) {
+        console.log(name, 'FAIL:', e.message);
+        const ln = (e.stack || '').match(/:(\d+)\n/);
+        if (ln) {
+            const lines = body.split('\n');
+            const i = parseInt(ln[1], 10) - 1;
+            for (let j = Math.max(0, i - 2); j <= Math.min(lines.length - 1, i + 2); j++) {
+                console.log('  ' + (j === i ? '> ' : '  ') + (j + 1) + ' | ' + lines[j].slice(0, 200));
             }
         }
     }
-    console.log('=== ' + name + ' top-level returns: ' + returns.length);
-    returns.forEach(r => console.log('  L' + r.line + ': ' + r.ctx));
 }
 
-scan('find_rule', obj.find_rule);
-scan('searchFind', obj.searchFind);
-scan('detail_find_rule', obj.detail_find_rule);
+check('find_rule', obj.find_rule);
+check('searchFind', obj.searchFind);
+check('detail_find_rule', obj.detail_find_rule);
+check('preRule', obj.preRule);
 const pages = JSON.parse(obj.pages);
-pages.forEach((p,i) => scan('pages['+i+'] '+p.path, p.rule));
+pages.forEach((p, i) => check('pages[' + i + '] ' + p.path, p.rule));

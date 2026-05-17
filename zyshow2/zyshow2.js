@@ -104,118 +104,164 @@ var rule = {
     // ============ find_rule: 主页面 ============
     find_rule: $.toString((LAZY_CODE, CAT_TABS, FULL_HEADERS_JSON, SITE_HOST) => {
         var d = [];
-        var cookie = getItem('zys2_cookie', '');
-        var indexExists = false;
-        try { indexExists = !!(readFile('hiker://files/cache/zyshow2_index.json') || '').length; } catch (e) {}
+        (function () {
+            var cookie = getItem('zys2_cookie', '');
+            var indexExists = false;
+            try { indexExists = !!(readFile('hiker://files/cache/zyshow2_index.json') || '').length; } catch (e) {}
+            var kw = getVar('zys2_kw', '');
 
-        // -------- 顶部全局搜索框 --------
-        d.push({
-            title: '',
-            desc: indexExists
-                ? '搜索节目名 / 主题 / 嘉宾 (全节目索引)'
-                : '搜索 (需先构建索引)',
-            col_type: 'input',
-            extra: {
-                titleVisible: false,
-                onChange: $.toString(() => {
-                    if (!input) return;
-                    // 跳全局搜索 — 海阔会调本规则的 search_url + searchFind
-                    return 'hiker://search?rule=' + MY_RULE.title + '&s=' + input;
-                })
-            }
-        });
-
-        // -------- 状态横条:Cookie / Index 健康 --------
-        var cookieIcon = cookie ? '🟢' : '🔴';
-        var indexIcon = indexExists ? '🟢' : '🔴';
-        d.push({
-            title: cookieIcon + ' Cookie',
-            url: $('#noLoading#').lazyRule(() => {
-                return 'hiker://page/getCookie?rule=' + MY_RULE.title;
-            }),
-            col_type: 'scroll_button'
-        });
-        d.push({
-            title: indexIcon + ' 索引',
-            url: $('#noLoading#').lazyRule(() => {
-                return 'hiker://page/indexer?rule=' + MY_RULE.title;
-            }),
-            col_type: 'scroll_button'
-        });
-        d.push({
-            title: '🔄 刷新',
-            url: $('#noLoading#').lazyRule(() => {
-                refreshPage();
-                return 'toast://刷新中';
-            }),
-            col_type: 'scroll_button'
-        });
-        d.push({col_type: 'blank_block'});
-
-        // -------- Cookie 缺失提示 --------
-        if (!cookie) {
+            // -------- 顶部全局搜索框 (本地索引搜索,onChange 触发刷新) --------
             d.push({
-                title: '⚠ 未拿到 Cloudflare cookie',
-                desc: '点击上方 "🔴 Cookie" 进入 WebView 过 CF (按住"立即播放/任意内容"出现即自动返回)',
-                col_type: 'rich_text'
+                title: '',
+                desc: indexExists
+                    ? '搜索节目名 / 主题 / 嘉宾 (清空恢复 tab)'
+                    : '搜索 (需先构建索引)',
+                col_type: 'input',
+                extra: {
+                    titleVisible: false,
+                    onChange: 'if(input!==getVar("zys2_kw","")){putVar({key:"zys2_kw",value:input});refreshPage(false)}'
+                }
             });
-            setResult(d);
-            return;
-        }
 
-        // -------- 索引缺失提示 --------
-        if (!indexExists) {
+            // -------- 状态横条:Cookie / Index 健康 --------
+            var cookieIcon = cookie ? '🟢' : '🔴';
+            var indexIcon = indexExists ? '🟢' : '🔴';
             d.push({
-                title: '⚠ 未构建节目索引',
-                desc: '点击上方 "🔴 索引" 开始抓取 105 节目 (约 2-3 分钟,只跑一次)',
-                col_type: 'rich_text'
-            });
-            setResult(d);
-            return;
-        }
-
-        // -------- 加载索引拿当前 tab 的节目 --------
-        var idx = null;
-        try { idx = JSON.parse(readFile('hiker://files/cache/zyshow2_index.json') || '{"shows":[]}'); }
-        catch (e) {
-            d.push({title: '索引文件损坏: ' + e.message, col_type: 'rich_text'});
-            setResult(d);
-            return;
-        }
-
-        // -------- 分类 tab (scroll_button) --------
-        var curCat = getVar('zys2_cat', CAT_TABS[0].id);
-        CAT_TABS.forEach((tab) => {
-            var sel = curCat === tab.id;
-            d.push({
-                title: sel ? '‘‘’’' + tab.name.fontcolor('#19B89D').bold() : tab.name,
-                url: sel ? 'hiker://empty' : $('#noLoading#').lazyRule((cid) => {
-                    putVar({key: 'zys2_cat', value: cid});
-                    refreshPage(false);
-                    return 'hiker://empty';
-                }, tab.id),
+                title: cookieIcon + ' Cookie',
+                url: $('#noLoading#').lazyRule(() => {
+                    return 'hiker://page/getCookie?rule=' + MY_RULE.title;
+                }),
                 col_type: 'scroll_button'
             });
-        });
-        d.push({col_type: 'blank_block'});
+            d.push({
+                title: indexIcon + ' 索引',
+                url: $('#noLoading#').lazyRule(() => {
+                    return 'hiker://page/indexer?rule=' + MY_RULE.title;
+                }),
+                col_type: 'scroll_button'
+            });
+            d.push({
+                title: '🔄 刷新',
+                url: $('#noLoading#').lazyRule(() => {
+                    putVar({key: 'zys2_kw', value: ''});
+                    refreshPage();
+                    return 'toast://刷新中';
+                }),
+                col_type: 'scroll_button'
+            });
+            d.push({col_type: 'blank_block'});
 
-        // -------- 当前 tab 的节目卡片 --------
-        var shows = (idx.shows || []).filter(s => s.cat === curCat);
-        if (shows.length === 0) {
-            d.push({title: '本分类无节目,试试重建索引', col_type: 'rich_text'});
-        } else {
-            d.push({title: shows.length + ' 个节目', col_type: 'rich_text'});
-            shows.forEach((s) => {
+            // -------- Cookie 缺失提示 --------
+            if (!cookie) {
                 d.push({
-                    title: s.name,
-                    desc: (s.episodes || []).length + ' 集',
-                    pic_url: SITE_HOST + '/img/' + s.slug + '.jpg@Referer=' + SITE_HOST + '/',
-                    url: SITE_HOST + '/' + s.slug + '/',
-                    col_type: 'movie_3'
+                    title: '⚠ 未拿到 Cloudflare cookie',
+                    desc: '点击上方 "🔴 Cookie" 进入 WebView 过 CF (页面菜单出现即自动返回)',
+                    col_type: 'rich_text'
+                });
+                return;
+            }
+
+            // -------- 索引缺失提示 --------
+            if (!indexExists) {
+                d.push({
+                    title: '⚠ 未构建节目索引',
+                    desc: '点击上方 "🔴 索引" 开始抓取 105 节目 (约 2-3 分钟,只跑一次)',
+                    col_type: 'rich_text'
+                });
+                return;
+            }
+
+            // -------- 加载索引 --------
+            var idx = null;
+            try { idx = JSON.parse(readFile('hiker://files/cache/zyshow2_index.json') || '{"shows":[]}'); }
+            catch (e) {
+                d.push({title: '索引文件损坏: ' + e.message, col_type: 'rich_text'});
+                return;
+            }
+
+            // -------- 关键字搜索模式 (覆盖 tab 网格) --------
+            if (kw) {
+                var kwLower = kw.toLowerCase();
+                var nameHits = [], epHits = [];
+                (idx.shows || []).forEach((s) => {
+                    if ((s.name || '').toLowerCase().indexOf(kwLower) >= 0) nameHits.push(s);
+                    (s.episodes || []).forEach((ep) => {
+                        var hay = ((ep.title || '') + ' ' + (ep.subj || '') + ' ' + (ep.guests || '')).toLowerCase();
+                        if (hay.indexOf(kwLower) >= 0) epHits.push({show: s, ep: ep});
+                    });
+                });
+                d.push({title: '"' + kw + '"  ·  ' + nameHits.length + ' 节目, ' + epHits.length + ' 集', col_type: 'rich_text'});
+                if (nameHits.length > 0) {
+                    d.push({title: '━━ 节目 ━━', col_type: 'rich_text'});
+                    nameHits.forEach((s) => {
+                        d.push({
+                            title: s.name,
+                            desc: (s.episodes || []).length + ' 集',
+                            pic_url: SITE_HOST + '/img/' + s.slug + '.jpg@Referer=' + SITE_HOST + '/',
+                            url: SITE_HOST + '/' + s.slug + '/',
+                            col_type: 'movie_3'
+                        });
+                    });
+                }
+                if (epHits.length > 0) {
+                    d.push({title: '━━ 集数 ━━', col_type: 'rich_text'});
+                    var slice = epHits.slice(0, 80);
+                    slice.forEach((h) => {
+                        var ep = h.ep, s = h.show;
+                        var title = '[' + s.name + '] ' + (ep.title || ep.date || '');
+                        var sub = (ep.subj || '').substring(0, 50);
+                        var gst = (ep.guests || '').substring(0, 40);
+                        var desc = sub + (gst ? '\n' + gst : '');
+                        d.push({
+                            title: title,
+                            desc: desc,
+                            url: SITE_HOST + '/' + s.slug + '/v/' + ep.date + '.html@lazyRule=.js:' + LAZY_CODE,
+                            col_type: 'text_1'
+                        });
+                    });
+                    if (epHits.length > slice.length) {
+                        d.push({title: '(还有 ' + (epHits.length - slice.length) + ' 集未显示,请细化关键字)', col_type: 'rich_text'});
+                    }
+                }
+                if (nameHits.length === 0 && epHits.length === 0) {
+                    d.push({title: '无匹配 — 试试更短的关键词', col_type: 'rich_text'});
+                }
+                return;
+            }
+
+            // -------- 分类 tab --------
+            var curCat = getVar('zys2_cat', CAT_TABS[0].id);
+            CAT_TABS.forEach((tab) => {
+                var sel = curCat === tab.id;
+                d.push({
+                    title: sel ? '‘‘’’' + tab.name.fontcolor('#19B89D').bold() : tab.name,
+                    url: sel ? 'hiker://empty' : $('#noLoading#').lazyRule((cid) => {
+                        putVar({key: 'zys2_cat', value: cid});
+                        refreshPage(false);
+                        return 'hiker://empty';
+                    }, tab.id),
+                    col_type: 'scroll_button'
                 });
             });
-        }
+            d.push({col_type: 'blank_block'});
 
+            // -------- 当前 tab 的节目卡片 --------
+            var shows = (idx.shows || []).filter(s => s.cat === curCat);
+            if (shows.length === 0) {
+                d.push({title: '本分类无节目,试试重建索引', col_type: 'rich_text'});
+            } else {
+                d.push({title: shows.length + ' 个节目', col_type: 'rich_text'});
+                shows.forEach((s) => {
+                    d.push({
+                        title: s.name,
+                        desc: (s.episodes || []).length + ' 集',
+                        pic_url: SITE_HOST + '/img/' + s.slug + '.jpg@Referer=' + SITE_HOST + '/',
+                        url: SITE_HOST + '/' + s.slug + '/',
+                        col_type: 'movie_3'
+                    });
+                });
+            }
+        })();
         setResult(d);
     }, LAZY_CODE, CAT_TABS, FULL_HEADERS_JSON, SITE_HOST),
 
@@ -223,6 +269,7 @@ var rule = {
     // 节目页 = SITE_HOST/<slug>/, 解 tr 表拿集数
     detail_find_rule: $.toString((LAZY_CODE, FULL_HEADERS_JSON) => {
         var d = [];
+        (function () {
         var cookie = getItem('zys2_cookie', '');
         var hd = JSON.parse(FULL_HEADERS_JSON);
         if (cookie) hd['Cookie'] = cookie;
@@ -241,7 +288,6 @@ var rule = {
 
         if (fatalErr) {
             d.push({title: fatalErr, col_type: 'rich_text'});
-            setResult(d);
             return;
         }
 
@@ -292,7 +338,7 @@ var rule = {
             added++;
         }
         if (added === 0) d.push({title: '本节目未解析到集数', col_type: 'rich_text'});
-
+        })();
         setResult(d);
     }, LAZY_CODE, FULL_HEADERS_JSON),
 
@@ -300,11 +346,11 @@ var rule = {
     // search_url = 'hiker://empty?key=**', 关键字从 MY_URL 提取
     search_find_rule: $.toString((LAZY_CODE, SITE_HOST) => {
         var d = [];
+        (function () {
         var kw = '';
         try { kw = decodeURIComponent((MY_URL.split('key=')[1] || '').split('&')[0]); } catch (e) {}
         if (!kw) {
             d.push({title: '请输入关键字', col_type: 'rich_text'});
-            setResult(d);
             return;
         }
 
@@ -312,7 +358,6 @@ var rule = {
         try { idx = JSON.parse(readFile('hiker://files/cache/zyshow2_index.json') || '{"shows":[]}'); }
         catch (e) {
             d.push({title: '索引未构建或损坏,请回小程序首页点击 "🔴 索引"', col_type: 'rich_text'});
-            setResult(d);
             return;
         }
 
@@ -380,7 +425,7 @@ var rule = {
         if (nameHits.length === 0 && epHits.length === 0) {
             d.push({title: '无匹配 — 试试更短的关键词,或回首页重建索引', col_type: 'rich_text'});
         }
-
+        })();
         setResult(d);
     }, LAZY_CODE, SITE_HOST),
 
@@ -443,27 +488,29 @@ var rule = {
             col_type: 'movie_3',
             rule: $.toString((CAT_TABS, FULL_HEADERS_JSON, SITE_HOST) => {
                 var d = [];
+                (function () {
                 var cookie = getItem('zys2_cookie', '');
                 if (!cookie) {
                     d.push({title: '⚠ 没有 cookie,请先回首页点 "🔴 Cookie" 过 CF', col_type: 'rich_text'});
-                    setResult(d);
                     return;
                 }
 
                 var hd = JSON.parse(FULL_HEADERS_JSON);
                 hd['Cookie'] = cookie;
 
-                d.push({title: '索引构建中...', col_type: 'rich_text'});
-                d.push({col_type: 'pic_1_center', extra: {cls: 'loading_gif'},
-                        pic_url: 'https://hikerfans.com/weisyr/img/Loading1.gif'});
-                if (typeof setPreResult !== 'undefined') setPreResult(d);
+                if (typeof setPreResult !== 'undefined') {
+                    setPreResult([
+                        {title: '索引构建中...', col_type: 'rich_text'},
+                        {col_type: 'pic_1_center', extra: {cls: 'loading_gif'},
+                         pic_url: 'https://hikerfans.com/weisyr/img/Loading1.gif'}
+                    ]);
+                }
 
                 // -------- Step 1: 抓首页, 解 dropdown 出全部节目 --------
                 var homeHtml = '';
                 try { homeHtml = fetch(SITE_HOST + '/', {headers: hd}) || ''; } catch (e) {}
                 if (!homeHtml || /Just a moment|cf-challenge/i.test(homeHtml)) {
-                    d = [{title: '首页加载失败或被 CF 拦截 — cookie 可能已失效,请重新过 CF', col_type: 'rich_text'}];
-                    setResult(d);
+                    d.push({title: '首页加载失败或被 CF 拦截 — cookie 可能已失效,请重新过 CF', col_type: 'rich_text'});
                     return;
                 }
 
@@ -488,8 +535,7 @@ var rule = {
                 });
 
                 if (allShows.length === 0) {
-                    d = [{title: '首页未解出任何节目 (dropdown 结构变了?)', col_type: 'rich_text'}];
-                    setResult(d);
+                    d.push({title: '首页未解出任何节目 (dropdown 结构变了?)', col_type: 'rich_text'});
                     return;
                 }
 
@@ -507,8 +553,7 @@ var rule = {
                         failCount++;
                         if (failCount > 10) {
                             // 连续失败,基本 cookie 失效,停止
-                            d = [{title: 'Cookie 中途失效 (失败 ' + failCount + '/' + (i+1) + ' 节目),已停止', col_type: 'rich_text'}];
-                            setResult(d);
+                            d.push({title: 'Cookie 中途失效 (失败 ' + failCount + '/' + (i+1) + ' 节目),已停止', col_type: 'rich_text'});
                             return;
                         }
                         continue;
@@ -542,11 +587,12 @@ var rule = {
                 };
                 writeFile('hiker://files/cache/zyshow2_index.json', JSON.stringify(idx));
 
-                d = [{
+                d.push({
                     title: '✅ 索引构建完成',
                     desc: allShows.length + ' 个节目 / ' + totalEps + ' 集',
                     col_type: 'rich_text'
-                }, {
+                });
+                d.push({
                     title: '回到小程序首页',
                     url: $('#noLoading#').lazyRule(() => {
                         back();
@@ -554,7 +600,8 @@ var rule = {
                         return 'hiker://empty';
                     }),
                     col_type: 'text_center_1'
-                }];
+                });
+                })();
                 setResult(d);
             }, CAT_TABS, FULL_HEADERS_JSON, SITE_HOST)
         }
