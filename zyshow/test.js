@@ -50,6 +50,9 @@ async function runScript(jsBody, myUrl) {
         MY_PAGE: 1,
         setResult: d => { result.push(...d); },
         fetch: u => html,
+        getVar: (k, dv) => dv || '',
+        putVar: () => {},
+        fetchCodeByWebView: () => '',
         console,
     };
     vm.createContext(ctx);
@@ -75,8 +78,8 @@ function header(t) { console.log('\n=== ' + t + ' ==='); }
     const urls = (rule.class_url || '').split('&').filter(Boolean);
     console.log('  class_name (' + names.length + '):', names.join(' | '));
     console.log('  class_url  (' + urls.length + '):', urls[0], '...');
-    if (names.length !== 7 || urls.length !== 7) {
-        console.log('  FAIL: expected 7 categories');
+    if (names.length !== 8 || urls.length !== 8) {
+        console.log('  FAIL: expected 8 categories (search + 7)');
         failed++;
     } else {
         console.log('  OK');
@@ -88,6 +91,10 @@ function header(t) { console.log('\n=== ' + t + ' ==='); }
     for (let i = 0; i < urls.length; i++) {
         const cat = names[i];
         const url = urls[i];
+        if (/cat=search/.test(url)) {
+            console.log('  SKIP [' + cat + '] WebView 分支, 本地跑不了, 真机验证');
+            continue;
+        }
         try {
             const items = await runScript(rule.find_rule, url);
             const shows = items.filter(it => it.col_type === 'movie_3');

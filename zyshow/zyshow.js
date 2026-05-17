@@ -37,9 +37,11 @@ var LAZY_CODE =
     "} " +
     "__r";
 
-// 7 个大分类 (映射到首页 dropdown-toggle 标题文本)
-var CAT_SLUGS  = ['th', 'zm', 'jx', 'ss', 'ms', 'yx', 'yl'];
+// 8 个 tab: 搜索 + 7 大分类 (映射到首页 dropdown-toggle 标题文本)
+// search 分支不 fetch 首页, 走 fetchCodeByWebView 过 Cloudflare Managed Challenge
+var CAT_SLUGS  = ['search', 'th', 'zm', 'jx', 'ss', 'ms', 'yx', 'yl'];
 var CAT_LABELS = {
+    search: '🔍 搜索',
     th: '谈话综艺',
     zm: '周末综艺',
     jx: '行脚旅游',
@@ -80,7 +82,89 @@ var rule = {
         var d = [];
 
         var catM = MY_URL.match(/[?&]cat=([a-z0-9]+)/);
-        var isCategoryView = !!catM;
+        var cat = catM ? catM[1] : '';
+        var isSearch = (cat === 'search');
+        var isCategoryView = !!catM && !isSearch;
+
+        // === 搜索分支: WebView 加载首页过 CF, 注入 form.submit() POST 搜索 ===
+        if (isSearch) {
+            var kw = getVar('zys_kw', '');
+            d.push({
+                title: '🔍',
+                desc: '输入节目名/嘉宾 (CF 防护, 首次过盾约 5-15 秒)',
+                col_type: 'input',
+                extra: {
+                    defaultValue: kw,
+                    titleVisible: false,
+                    onChange: 'if(input!==getVar("zys_kw","")){putVar({key:"zys_kw",value:input});refreshPage(false)}'
+                }
+            });
+            if (!kw) {
+                d.push({title: '请输入关键词', col_type: 'rich_text'});
+            } else {
+                d.push({title: '搜索中: ' + kw + ' …', col_type: 'rich_text'});
+                // checkJs 在每次 WebView 周期回调: 先在首页注入 form.submit(), 跳转后等结果页 tr 表
+                var kwJs = JSON.stringify(kw);
+                var checkJs = 'if (location.pathname && location.pathname.indexOf("/search.asp") === 0) {' +
+                    ' var trs = document.querySelectorAll("tr"); var ok = false;' +
+                    ' for (var i = 0; i < trs.length; i++) { if (/\\/v\\/\\d{8}\\.html/.test(trs[i].innerHTML)) { ok = true; break; } }' +
+                    ' return ok ? "1" : (trs.length > 30 ? "0" : null);' +
+                    '} ' +
+                    'var f = document.getElementById("searchsoft");' +
+                    'if (f && f.bh && !window.__zys_submitted) {' +
+                    ' window.__zys_submitted = true;' +
+                    ' f.bh.value = ' + kwJs + ';' +
+                    ' setTimeout(function(){ f.submit(); }, 100);' +
+                    '} ' +
+                    'return null;';
+                var sHtml = '';
+                try {
+                    sHtml = fetchCodeByWebView('https://www.zyshow.co/', {
+                        timeout: 45000,
+                        headers: {'User-Agent': 'MOBILE_UA'},
+                        checkJs: checkJs
+                    }) || '';
+                } catch (e) {
+                    d.push({title: 'WebView 加载失败: ' + e.message, col_type: 'rich_text'});
+                }
+                if (sHtml && sHtml.length >= 200) {
+                    var sBlocks = sHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
+                    var hitCount = 0;
+                    var sSeen = {};
+                    for (var si = 0; si < sBlocks.length; si++) {
+                        var sTr = sBlocks[si];
+                        var sDM = sTr.match(/\/v\/(\d{8})\.html/);
+                        if (!sDM) continue;
+                        var sDate = sDM[1];
+                        var sHM = sTr.match(/href="([^"]*\/v\/\d{8}\.html)"/);
+                        var sHref = sHM ? sHM[1] : '';
+                        if (sSeen[sHref]) continue;
+                        sSeen[sHref] = 1;
+                        var sTM = sTr.match(/<a[^>]*\btitle="([^"]+)"/);
+                        var sT = sTM ? sTM[1] : sDate;
+                        var sTds = sTr.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [];
+                        var sStripTd = function (s) { return (s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); };
+                        var sSubj = sTds.length >= 2 ? sStripTd(sTds[1]) : '';
+                        var sGuests = sTds.length >= 3 ? sStripTd(sTds[2]) : '';
+                        var sAbsHref = /^https?:/.test(sHref) ? sHref : ('https://www.zyshow.co' + sHref.replace(/^\.\.?\//, '/'));
+                        var sDesc = (sSubj ? sSubj.substring(0, 50) : '') + (sGuests ? '\n' + sGuests.substring(0, 40) : '');
+                        d.push({
+                            title: sT,
+                            desc: sDesc,
+                            url: sAbsHref + '@lazyRule=.js:' + LAZY_CODE,
+                            col_type: 'text_1'
+                        });
+                        hitCount++;
+                    }
+                    if (hitCount === 0) {
+                        d.push({title: '未搜到 "' + kw + '" — 该站搜索仅按"嘉宾/主题"匹配, 节目名常无结果', col_type: 'rich_text'});
+                    }
+                } else if (!sHtml) {
+                    d.push({title: 'WebView 超时或被 CF 拦截, 请稍后重试', col_type: 'rich_text'});
+                }
+            }
+            setResult(d);
+        } else {
 
         var html = '';
         var fatalErr = '';
@@ -96,7 +180,6 @@ var rule = {
             d.push({title: fatalErr, col_type: 'rich_text'});
         } else if (isCategoryView) {
             // === 分类视图: 解析首页 dropdown-menu, 取当前 cat 对应的节目列表 ===
-            var cat = catM[1];
             var targetTitle = CAT_LABELS[cat] || '';
 
             var dropdowns = html.match(/<li class="dropdown">[\s\S]*?<\/ul><\/li>/g) || [];
@@ -167,6 +250,7 @@ var rule = {
             }
         }
         setResult(d);
+        }  // end of else (非 search 分支)
     }, LAZY_CODE, CAT_LABELS),
 
     // ============ 二级 (detail_find_rule) ============

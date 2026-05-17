@@ -11,7 +11,15 @@
 或:
 - `token-home.txt` — 首页频道(规则形式)
 - `token-video.txt` — 视频规则
-- `token-search.txt` — 搜索引擎(站内 POST 搜索可能被 Cloudflare 拦)
+- `token-search.txt` — 搜索引擎(独立子集, 不带 WebView 搜索, 站点 search.asp 被 CF 拦)
+
+## 搜索
+
+首页第一个 tab 「🔍 搜索」是 WebView 方案 — 站点对 `search.asp` 路径配了 Cloudflare Managed Challenge, 裸 `fetch` 全部 403。规则用 `fetchCodeByWebView` 加载首页过盾, 然后注入 form 自动 POST 提交, 在结果页等 tr 表出现后取源码。
+
+代价: 首次过盾 5-15 秒, cookie 有效期内后续搜索约 1-2 秒。CF cookie 失效后需重新过盾。
+
+注意: 站点搜索按"嘉宾/主题"匹配, 不是按节目名 — 搜「11點」可能无果, 搜「吴宗宪」「美食」更靠谱。
 
 ## 工作原理
 
