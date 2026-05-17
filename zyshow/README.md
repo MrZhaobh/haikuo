@@ -26,17 +26,28 @@ lazy 函数:
 
 - `zyshow.js` — 规则源码
 - `compile.js` — 编译入口 (输出 clipboard.json / 各类口令)
+- `test.js` — 端到端流程测试 (三级跳)
 - `clipboard.json` — 订阅源 (规则数组)
 - `single.json` — 单条规则
 - `token-*.txt` — 各类 v2 口令
 - `share.txt` — 旧版分享文本
 
-## 重新编译
+## 重新编译 + 测试
+
+每次改 `zyshow.js` 后:
 
 ```
-cd work/zyshow
-node compile.js
+cd work/sugo/zyshow
+node compile.js     # 重新生成 clipboard.json / 口令
+node test.js        # 三级流程测试: 7 分类 → 节目网格 → 集数列表
 ```
+
+`test.js` 用 vm 模拟海阔 JSEngine, 真实 fetch zyshow.co 验证:
+1. `class_name`/`class_url` 7 项齐全
+2. 每个分类 `find_rule` 解析出节目网格 (各 15 个)
+3. 抽样 3 个节目, `detail_find_rule` 解析出集数列表
+
+任一级失败时返回非 0 退出码, 阻止推送坏规则。改完先跑 `test.js`, 通过再发订阅。
 
 ## 注意
 

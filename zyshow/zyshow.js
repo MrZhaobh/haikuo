@@ -154,9 +154,53 @@ var rule = {
     }, LAZY_CODE, CAT_LABELS),
 
     // ============ 二级 (detail_find_rule) ============
-    // 单集页直接走 lazy, 不需要 detail 元数据页
-    detail_col_type: 'movie_1',
-    detail_find_rule: '*',
+    // 节目页 → 集数列表 (tr 表). 单集卡片走 lazy 嗅 m3u8.
+    detail_col_type: 'text_1',
+    detail_find_rule: $.toString((LAZY_CODE) => {
+        var d = [];
+        var html = '';
+        try {
+            html = fetch(MY_URL, {headers: {'User-Agent': 'MOBILE_UA'}}) || '';
+        } catch (e) {
+            d.push({title: '加载失败: ' + e.message, col_type: 'rich_text'});
+        }
+        if (html && html.length >= 200) {
+            var blocks = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
+            var added = 0;
+            var seen = {};
+            for (var k = 0; k < blocks.length; k++) {
+                var tr = blocks[k];
+                var dM = tr.match(/\/v\/(\d{8})\.html/);
+                if (!dM) continue;
+                var date = dM[1];
+                if (seen[date]) continue;
+                seen[date] = 1;
+                var tM2 = tr.match(/<a[^>]*\btitle="([^"]+)"/);
+                var t = tM2 ? tM2[1] : date;
+                var hM = tr.match(/href="([^"]*\/v\/\d{8}\.html)"/);
+                var href = hM ? hM[1] : '';
+                var tds = tr.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [];
+                var stripTd = function (s) { return (s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); };
+                var subj = tds.length >= 2 ? stripTd(tds[1]) : '';
+                var guests = tds.length >= 3 ? stripTd(tds[2]) : '';
+                var absHref = /^https?:/.test(href) ? href : ('https://www.zyshow.co' + href.replace(/^\.\.?\//, '/'));
+                var desc = (subj ? subj.substring(0, 50) : '') + (guests ? '\n' + guests.substring(0, 40) : '');
+                d.push({
+                    title: t,
+                    desc: desc,
+                    url: absHref + '@lazyRule=.js:' + LAZY_CODE,
+                    col_type: 'text_1'
+                });
+                added++;
+            }
+            if (added === 0) {
+                d.push({title: '本节目未解析到集数', col_type: 'rich_text'});
+            }
+        } else if (html !== undefined) {
+            d.push({title: '页面为空: ' + MY_URL, col_type: 'rich_text'});
+        }
+        setResult(d);
+    }, LAZY_CODE),
     sdetail_col_type: 'movie_1',
     sdetail_find_rule: '*',
 
