@@ -90,17 +90,17 @@ var rule = {
         if (isSearch) {
             var kw = getVar('zys_kw', '');
             d.push({
-                title: '🔍',
-                desc: '输入节目名/嘉宾 (CF 防护, 首次过盾约 5-15 秒)',
+                title: '搜索',  // 右侧按钮文字
+                desc: '输入关键词后点 "搜索" 按钮 (CF 防护, 首次过盾约 5-15 秒)',
                 col_type: 'input',
+                url: "(putVar({key:'zys_kw',value:input}), refreshPage(false), 'hiker://empty')",
                 extra: {
                     defaultValue: kw,
-                    titleVisible: false,
-                    onChange: 'if(input!==getVar("zys_kw","")){putVar({key:"zys_kw",value:input});refreshPage(false)}'
+                    titleVisible: true
                 }
             });
             if (!kw) {
-                d.push({title: '请输入关键词', col_type: 'rich_text'});
+                d.push({title: '请输入关键词后点右侧 "搜索"', col_type: 'rich_text'});
             } else {
                 d.push({title: '搜索中: ' + kw + ' …', col_type: 'rich_text'});
                 // checkJs 在每次 WebView 周期回调: 先在首页注入 form.submit(), 跳转后等结果页 tr 表
