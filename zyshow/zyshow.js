@@ -103,25 +103,27 @@ var rule = {
                 d.push({title: '请输入关键词后点右侧 "搜索"', col_type: 'rich_text'});
             } else {
                 d.push({title: '搜索中: ' + kw + ' …', col_type: 'rich_text'});
-                // checkJs 在每次 WebView 周期回调: 先在首页注入 form.submit(), 跳转后等结果页 tr 表
-                var kwJs = JSON.stringify(kw);
-                var checkJs = 'if (location.pathname && location.pathname.indexOf("/search.asp") === 0) {' +
-                    ' var trs = document.querySelectorAll("tr"); var ok = false;' +
-                    ' for (var i = 0; i < trs.length; i++) { if (/\\/v\\/\\d{8}\\.html/.test(trs[i].innerHTML)) { ok = true; break; } }' +
-                    ' return ok ? "1" : (trs.length > 30 ? "0" : null);' +
-                    '} ' +
-                    'var f = document.getElementById("searchsoft");' +
-                    'if (f && f.bh && !window.__zys_submitted) {' +
-                    ' window.__zys_submitted = true;' +
-                    ' f.bh.value = ' + kwJs + ';' +
-                    ' setTimeout(function(){ f.submit(); }, 100);' +
-                    '} ' +
-                    'return null;';
+                // 直接 GET search.asp — ASP 的 Request("bh") 同时收 form 和 querystring,
+                // 且 WebView 加载会让 CF 自动通关后 redirect 到目标 URL
+                // GBK 编码用海阔 decodeStr(str, 'GBK') (尽管名字叫 decode, 实际是 encode + percent)
+                var encoded;
+                try { encoded = decodeStr(kw, 'GBK'); }
+                catch (e) { encoded = encodeURIComponent(kw); }
+                var sUrl = 'https://www.zyshow.co/search.asp?bh=' + encoded;
+
+                // checkJs: 等到 tr 表里出现 /v/YYYYMMDD.html 即认为是结果页
+                var checkJs = 'try {' +
+                    ' var trs = document.querySelectorAll("tr");' +
+                    ' for (var i = 0; i < trs.length; i++) {' +
+                    '  if (/\\/v\\/\\d{8}\\.html/.test(trs[i].innerHTML)) return "1";' +
+                    ' }' +
+                    ' return null;' +
+                    '} catch(e) { return null; }';
                 var sHtml = '';
                 try {
-                    sHtml = fetchCodeByWebView('https://www.zyshow.co/', {
-                        timeout: 45000,
-                        headers: {'User-Agent': 'MOBILE_UA'},
+                    sHtml = fetchCodeByWebView(sUrl, {
+                        timeout: 60000,
+                        headers: {'User-Agent': 'MOBILE_UA', 'Referer': 'https://www.zyshow.co/'},
                         checkJs: checkJs
                     }) || '';
                 } catch (e) {
@@ -157,10 +159,18 @@ var rule = {
                         hitCount++;
                     }
                     if (hitCount === 0) {
-                        d.push({title: '未搜到 "' + kw + '" — 该站搜索仅按"嘉宾/主题"匹配, 节目名常无结果', col_type: 'rich_text'});
+                        // 显示 title + 长度作 debug
+                        var titleM = sHtml.match(/<title[^>]*>([^<]*)<\/title>/i);
+                        var pgTitle = titleM ? titleM[1].trim() : '(no title)';
+                        d.push({title: '未搜到 "' + kw + '"', col_type: 'rich_text'});
+                        d.push({title: '[debug] page title: ' + pgTitle + ' | len: ' + sHtml.length, col_type: 'rich_text'});
                     }
                 } else if (!sHtml) {
-                    d.push({title: 'WebView 超时或被 CF 拦截, 请稍后重试', col_type: 'rich_text'});
+                    d.push({title: 'WebView 超时或被 CF 拦截 (timeout 60s)', col_type: 'rich_text'});
+                    d.push({title: '[debug] checkJs 未匹配到 /v/YYYYMMDD.html 模式, 看不到结果页 tr 表', col_type: 'rich_text'});
+                } else {
+                    // sHtml 太短 (< 200 字节)
+                    d.push({title: '[debug] WebView 返回过短: ' + sHtml.length + ' 字节, 内容: ' + sHtml.substring(0, 150), col_type: 'rich_text'});
                 }
             }
             setResult(d);
