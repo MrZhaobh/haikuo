@@ -12,22 +12,27 @@
  * class_url 用 query (?cat=th) 区分顶层分类, 站点不识别 query 故返回同一首页 HTML
  */
 
-// 嗅探 lazy: 输入是单集页 URL, 输出 m3u8 直链.
-// 海阔 @lazyRule=.js:<code> 不允许任何 return 语句 (#14/#66 错误),
-// 也不允许 IIFE — 用 __r 变量累积结果, 最后一行表达式作返回值, 参照 zyshow11 写法.
+// 嗅探 lazy: 输入是单集页 URL, 输出 m3u8 直链. 跟 zyshow11 完全对齐:
+// 1) 单集页含两组 base64 — `url|XXX|` 和 `url=XXX`, 内容不同
+// 2) **必须用 url=XXX 形式**, url|XXX| 的源海阔拉不到 (CDN 限制)
+// 3) 海阔 @lazyRule=.js:<code> 不允许任何 return 语句, 用 __r 累积 + 最后一行裸表达式
 var LAZY_CODE =
-    "var __r = ''; " +
-    "var html = ''; try { html = fetch(input, {headers:{'User-Agent':'MOBILE_UA','Referer':'https://www.zyshow.co/'}}); } catch (e) { __r = 'hiker://empty##加载失败 ' + e.message; } " +
-    "if (!__r) { " +
-    "  var m = html.match(/url\\|([A-Za-z0-9+\\/=]{40,})\\|/); " +
-    "  if (!m) __r = 'hiker://empty##未抓取到 base64'; " +
+    "var __r = ''; var u = input; var html = ''; var err = ''; " +
+    "try { html = fetch(u, {headers:{'User-Agent':'MOBILE_UA','Referer':'https://www.zyshow.co/'}}); } catch(e){ err = e.message; } " +
+    "if (err) { __r = 'hiker://empty##加载失败 ' + err; } " +
+    "else if (!html || html.length < 200) { __r = 'hiker://empty##页面为空'; } " +
+    "else { " +
+    "  var hash = ''; " +
+    "  var hm = html.match(/url=([A-Za-z0-9+\\/=]{60,})/); " +
+    "  if (hm) hash = hm[1]; " +
+    "  if (!hash) { __r = 'hiker://empty##未找到播放地址'; } " +
     "  else { " +
-    "    var jumpUrl = 'https://www.zyshow.co/url=' + m[1]; " +
-    "    var ck = ''; try { ck = fetch(jumpUrl, {headers:{'User-Agent':'MOBILE_UA','Referer':'https://www.zyshow.co/'}}); } catch (e) { __r = 'hiker://empty##跳转失败 ' + e.message; } " +
-    "    if (!__r) { " +
-    "      var m2 = (ck||'').match(/urls\\s*=\\s*['\"]([^'\"]+)['\"]/); " +
-    "      __r = m2 ? m2[1] + ';{Referer@https://sc.zyshow.net/}' : 'hiker://empty##未抓取到 m3u8'; " +
-    "    } " +
+    "    var pUrl = 'https://www.zyshow.co/url=' + hash; " +
+    "    var pHtml = ''; try { pHtml = fetch(pUrl, {headers:{'User-Agent':'MOBILE_UA','Referer':'https://www.zyshow.co/'}}); } catch(e){} " +
+    "    var m = pHtml.match(/var\\s+urls\\s*=\\s*['\"]([^'\"]+\\.m3u8[^'\"]*)['\"]/); " +
+    "    if (!m) m = pHtml.match(/(https?:[^'\"\\s<>]+\\.m3u8[^'\"\\s<>]*)/); " +
+    "    if (m) { __r = m[1] + ';{Referer@https://sc.zyshow.net/}'; } " +
+    "    else { __r = 'hiker://empty##未抓到 m3u8'; } " +
     "  } " +
     "} " +
     "__r";

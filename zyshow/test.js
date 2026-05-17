@@ -149,16 +149,17 @@ function header(t) { console.log('\n=== ' + t + ' ==='); }
                 failed++;
             }
 
-            // 3) 实跑 lazy 链路: 真 fetch + 真嗅 m3u8
+            // 3) 实跑 lazy 链路: 真 fetch + 真嗅 m3u8 (跟 zyshow11 一致用 url= 形式)
             let html1, html2;
             try { html1 = await fetchSync(epUrl); } catch (e) { console.log('  FAIL fetch ep page:', e.message); failed++; return; }
-            const base64M = html1.match(/url\|([A-Za-z0-9+\/=]{40,})\|/);
-            if (!base64M) { console.log('  FAIL: no url|base64| in ep page'); failed++; }
+            const base64M = html1.match(/url=([A-Za-z0-9+\/=]{60,})/);
+            if (!base64M) { console.log('  FAIL: no url=<base64> in ep page'); failed++; }
             else {
                 try { html2 = await fetchSync('https://www.zyshow.co/url=' + base64M[1]); } catch (e) { console.log('  FAIL fetch jump:', e.message); failed++; return; }
-                const m3u8M = html2.match(/urls\s*=\s*['"]([^'"]+)['"]/);
-                if (!m3u8M) console.log('  WARN: no m3u8 (CDN may be region-locked)');
-                else console.log('  OK   lazy chain:', m3u8M[1].slice(0, 60));
+                let m3u8M = html2.match(/var\s+urls\s*=\s*['"]([^'"]+\.m3u8[^'"]*)['"]/);
+                if (!m3u8M) m3u8M = html2.match(/(https?:[^'"\s<>]+\.m3u8[^'"\s<>]*)/);
+                if (!m3u8M) console.log('  WARN: no m3u8 in ck.php (CDN/Cloudflare?)');
+                else console.log('  OK   lazy chain:', m3u8M[1].slice(0, 70));
             }
         }
     } catch (e) {
