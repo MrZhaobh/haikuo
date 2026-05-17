@@ -89,8 +89,9 @@ const vm = require('vm');
     const v2Json = JSON.stringify(v2);
 
     // 订阅源: v2 数组 (class_url 已是绝对 URL)
+    // 注: 仓库根 clipboard.json 由 build-all.js 聚合写入,所以这里写到站点专属文件
     const clip = JSON.stringify([v2], null, 2);
-    fs.writeFileSync(path.join(__dirname, 'clipboard.json'), clip, 'utf8');
+    fs.writeFileSync(path.join(__dirname, 'sugoideas-rules.json'), clip, 'utf8');
 
     // 旧版分享文本也用 v2 数组
     const shareText = '海阔视界·我的视频·' + rule.title + '·' + JSON.stringify([v2]);
@@ -137,7 +138,7 @@ const vm = require('vm');
     fs.writeFileSync(path.join(__dirname, 'token-quick.txt'), tokenQuick, 'utf8');
 
     console.log('已生成:');
-    console.log('  clipboard.json   (订阅源: v2 数组)', Buffer.byteLength(clip), 'B');
+    console.log('  sugoideas-rules.json (订阅源片段, 由 build-all.js 聚合到根 clipboard.json)', Buffer.byteLength(clip), 'B');
     console.log('  single.json      (单条规则, 旧版字段, 仅备用)');
     console.log('  share.txt        (分享文本, v2 数组)');
     console.log('  token-video.txt  (新版口令: 视频￥video_rule_v2)');
