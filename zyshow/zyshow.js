@@ -86,21 +86,29 @@ var rule = {
         var isSearch = (cat === 'search');
         var isCategoryView = !!catM && !isSearch;
 
-        // === 搜索分支: WebView 加载首页过 CF, 注入 form.submit() POST 搜索 ===
+        // === 搜索分支: WebView 加载 search.asp 过 CF ===
+        // token 哨兵: 仅当 zys_token 变化时才跑 WebView, 避免切回 tab 自动重搜
         if (isSearch) {
             var kw = getVar('zys_kw', '');
+            var curToken = getVar('zys_token', '');
+            var doneToken = getVar('zys_done_token', '');
+            var shouldSearch = kw && curToken && curToken !== doneToken;
             d.push({
-                title: '搜索',  // 右侧按钮文字
+                title: '搜索',
                 desc: '输入关键词后点 "搜索" 按钮 (CF 防护, 首次过盾约 5-15 秒)',
                 col_type: 'input',
-                url: "(putVar({key:'zys_kw',value:input}), refreshPage(false), 'hiker://empty')",
+                url: "(putVar({key:'zys_kw',value:input}), putVar({key:'zys_token',value:''+Date.now()}), refreshPage(false), 'hiker://empty')",
                 extra: {
                     defaultValue: kw,
                     titleVisible: true
                 }
             });
-            if (!kw) {
-                d.push({title: '请输入关键词后点右侧 "搜索"', col_type: 'rich_text'});
+            if (!shouldSearch) {
+                if (kw) {
+                    d.push({title: '上次关键词: ' + kw + ' (按"搜索"重新搜)', col_type: 'rich_text'});
+                } else {
+                    d.push({title: '请输入关键词后点右侧 "搜索"', col_type: 'rich_text'});
+                }
             } else {
                 d.push({title: '搜索中: ' + kw + ' …', col_type: 'rich_text'});
                 // 直接 GET search.asp — ASP 的 Request("bh") 同时收 form 和 querystring,
@@ -129,6 +137,9 @@ var rule = {
                 } catch (e) {
                     d.push({title: 'WebView 加载失败: ' + e.message, col_type: 'rich_text'});
                 }
+                // 哨兵: 不管搜索成功/失败/超时, 都把当前 token 标记为已处理
+                // 防止用户切回搜索 tab 时, find_rule 重渲染又触发一次 60s WebView
+                putVar({key: 'zys_done_token', value: curToken});
                 if (sHtml && sHtml.length >= 200) {
                     var sBlocks = sHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
                     var hitCount = 0;
