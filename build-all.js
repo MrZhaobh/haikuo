@@ -18,6 +18,7 @@ const SITES = [
     { name: 'mtyy',      file: 'mtyy/clipboard.json' },    // 麦田影院 (decode.js 由 SQLite 备份导出)
     { name: 'zyshow11',  file: 'zyshow11/clipboard.json' }, // 11点热炒店 单节目 (zyshow.co)
     { name: 'zyshow',    file: 'zyshow/clipboard.json' },   // 综艺巴士 全站台综 35 节目 (zyshow.co)
+    { name: 'zyshow2',   file: 'zyshow2/clipboard.json' },  // 综艺巴士 深搜索版 (WebView 抓 CF cookie + 全节目索引缓存)
 ];
 
 // 订阅源里所有规则统一分组 (各站源数据 group 不变, 仅在聚合输出里覆盖)
