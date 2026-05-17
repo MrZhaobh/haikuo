@@ -431,7 +431,10 @@ var rule = {
 
     // ============ pages: 子页面 ============
     pages: [
-        // ----- 子页 1: WebView 抓 cookie -----
+        // ----- 子页 1: WebView 抓 cf_clearance cookie -----
+        // 关键: zyshow.co 首页不挂 CF, 只有 /search.asp 等接口挂 CF Managed Challenge
+        // 必须用顶层 navigation 打到挂 CF 的端点, 让浏览器自动跑 challenge JS,
+        // 通过后整个 domain 都有 cf_clearance cookie
         {
             name: '获取Cookie',
             path: 'getCookie',
@@ -440,40 +443,55 @@ var rule = {
                 var d = [];
                 d.push({
                     title: '操作说明',
-                    desc: '页面会自动加载,看到"Just a moment..."请稍候,几秒后真实页面出现就会自动回到小程序',
+                    desc: '会自动加载 /search.asp 触发 Cloudflare 5 秒挑战。看到"Just a moment..."请稍候,搜索页出现后自动返回小程序。如果 60s 还卡在 challenge,长按页面手动点 verify 框。',
                     col_type: 'rich_text'
                 });
                 d.push({
                     col_type: 'x5_webview_single',
-                    url: SITE_HOST + '/',
+                    url: SITE_HOST + '/search.asp',  // ← 走挂 CF 的端点,顶层 navigation 才能跑 challenge
                     desc: 'float&&90%',
                     title: '',
                     extra: {
                         canBack: true,
                         ua: 'Mozilla/5.0 (Linux; Android 12; SM-A536U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36',
                         js: $.toString(() => {
-                            // 注入 WebView 内 JS: 等真实页面出现(.dropdown-menu),抓 cookie 回填,自动返回
+                            // 注入 JS: 轮询 (a) 不是 CF challenge 页 (b) 真实搜索页元素已渲染
+                            //         (c) cookie 含 cf_clearance —— 三者满足即回填并返回
                             var tries = 0;
                             function check() {
                                 tries++;
                                 try {
-                                    // .dropdown-menu / .dropdown 是 zyshow.co 真实首页菜单标志
-                                    var ok = document.querySelector('.dropdown-menu') ||
-                                             document.querySelector('li.dropdown');
-                                    if (ok) {
+                                    var title = (document.title || '').toLowerCase();
+                                    var isChallenge = title.indexOf('just a moment') >= 0 ||
+                                                      title.indexOf('attention required') >= 0 ||
+                                                      document.querySelector('#challenge-form') ||
+                                                      document.querySelector('iframe[src*="challenges.cloudflare.com"]');
+                                    var hasReal = document.querySelector('.dropdown-menu') ||
+                                                  document.querySelector('input[type=search]') ||
+                                                  document.querySelector('input[name="q"]') ||
+                                                  document.querySelector('form[action*="search"]');
+                                    if (!isChallenge && hasReal) {
                                         var c = fba.getCookie(location.href);
-                                        if (c && c.length > 20) {
+                                        // cf_clearance 是 CF challenge 通过后才有的关键 cookie
+                                        if (c && c.indexOf('cf_clearance') >= 0) {
                                             fba.putVar('zys2_ck_from_wv', c);
-                                            fba.toast('已抓取 cookie,返回小程序');
+                                            fba.toast('✅ 已抓取 cf_clearance,正在返回');
+                                            fba.parseLazyRule($$$().lazyRule(() => { back(); }));
+                                            return;
+                                        } else if (c && c.length > 20 && tries > 30) {
+                                            // CF 在某些机型上 challenge 不出 cf_clearance,而是别的 cookie
+                                            // 拿到 15s 后还没 cf_clearance 但有 cookie,fallback 保存
+                                            fba.putVar('zys2_ck_from_wv', c);
+                                            fba.toast('⚠ 未见 cf_clearance,保存当前 cookie 试试');
                                             fba.parseLazyRule($$$().lazyRule(() => { back(); }));
                                             return;
                                         }
                                     }
-                                } catch (e) { fba.log('check err: ' + e.message); }
-                                if (tries < 240) setTimeout(check, 500);   // 2 分钟内不断尝试
-                                else fba.toast('60s 内未通过 CF,可能需要手动点击页面');
+                                } catch (e) { try { fba.log('zys2 check: ' + e.message); } catch(ee) {} }
+                                if (tries < 240) setTimeout(check, 500);
+                                else fba.toast('60s 内未过 CF,请手动操作 verify 框');
                             }
-                            setTimeout(check, 1500);  // 先等 CF 自动 challenge 跑一会
+                            setTimeout(check, 2000);  // 先等 CF 自动 challenge 跑一会
                         })
                     }
                 });
