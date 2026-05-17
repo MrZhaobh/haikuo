@@ -17,17 +17,29 @@
  */
 
 // 嗅探 lazy: 输入是 vodplay URL, 输出 m3u8 直链 (取第一路 pdata)
+// 注意: 海阔 JSEngine 顶层 return 非法 → 用 var result 末尾求值
 var LAZY_CODE =
+    "var __r = ''; " +
     "var u = input; " +
     "var m = u.match(/\\/vodplay\\/(\\d+)(?:\\/([^?#]+))?/); " +
-    "if (!m) return 'hiker://empty##\u672a\u8b58\u5225 vodplay URL'; " +
-    "var api = 'https://www.nivod.cc/xhr_playinfo/' + m[1] + (m[2] && m[2] !== 'v' ? '-' + m[2] : ''); " +
-    "var html = ''; try { html = fetch(api, {headers:{'User-Agent':'MOBILE_UA','Referer':'https://www.nivod.cc/'}}); } catch(e){ return 'hiker://empty##\u63a5\u53e3\u5931\u8d25 ' + e.message; } " +
-    "var data; try { data = JSON.parse(html); } catch(e){ return 'hiker://empty##JSON \u89e3\u6790\u5931\u8d25'; } " +
-    "var ps = (data && data.pdatas) || []; " +
-    "if (!ps.length && data && data.more_eps && data.more_eps[0] && data.more_eps[0].plays) ps = data.more_eps[0].plays; " +
-    "if (!ps.length) return 'hiker://empty##\u65e0\u53ef\u7528\u64ad\u653e\u7ebf\u8def'; " +
-    "ps[0].playurl";
+    "if (!m) { __r = 'hiker://empty##\u672a\u8b58\u5225 vodplay URL'; } " +
+    "else { " +
+    "  var api = 'https://www.nivod.cc/xhr_playinfo/' + m[1] + (m[2] && m[2] !== 'v' ? '-' + m[2] : ''); " +
+    "  var html = ''; var err = ''; " +
+    "  try { html = fetch(api, {headers:{'User-Agent':'MOBILE_UA','Referer':'https://www.nivod.cc/'}}); } catch(e){ err = e.message; } " +
+    "  if (err) { __r = 'hiker://empty##\u63a5\u53e3\u5931\u8d25 ' + err; } " +
+    "  else { " +
+    "    var data = null; try { data = JSON.parse(html); } catch(e){} " +
+    "    if (!data) { __r = 'hiker://empty##JSON \u89e3\u6790\u5931\u8d25'; } " +
+    "    else { " +
+    "      var ps = (data && data.pdatas) || []; " +
+    "      if (!ps.length && data.more_eps && data.more_eps[0] && data.more_eps[0].plays) ps = data.more_eps[0].plays; " +
+    "      if (!ps.length) { __r = 'hiker://empty##\u65e0\u53ef\u7528\u64ad\u653e\u7ebf\u8def'; } " +
+    "      else { __r = ps[0].playurl; } " +
+    "    } " +
+    "  } " +
+    "} " +
+    "__r";
 
 var CLASS_NAME = ['\u7535\u5f71','\u7535\u89c6\u5267','\u7efc\u827a','\u52a8\u6f2b'].join('&');
 // 各分类 URL 内部不能含 &(海阔切分类是按 & 分),分页在 find_rule 里用 MY_PAGE 拼接
@@ -72,34 +84,52 @@ var rule = {
         if (fatal) {
             d.push({title: fatal, col_type: 'rich_text'});
         } else {
+            // 优先用父 ul 收 li,失败 fallback 到正则全局抓 li 块
             var lis = [];
-            try { lis = parseDomForArray(html, 'li.qy-mod-li') || []; } catch (e) {}
+            try { lis = parseDomForArray(html, 'ul.qy-mod-ul&&li') || []; } catch (e) {}
+            if (!lis.length) {
+                try { lis = parseDomForArray(html, 'li.qy-mod-li') || []; } catch (e) {}
+            }
+            if (!lis.length) {
+                // 最后兜底:整段 HTML 用正则切 li 块
+                var blocks = html.match(/<li[^>]*class=["'][^"']*qy-mod-li[^"']*["'][^>]*>[\s\S]*?<\/li>/g) || [];
+                lis = blocks;
+            }
 
             var seen = {};
             for (var i in lis) {
                 if (!lis[i]) continue;
-                var href = '';
-                try { href = parseDomForHtml(lis[i], 'a&&href') || ''; } catch (e) {}
-                var idMatch = href.match(/\/voddetail\/(\d+)/);
-                if (!idMatch) continue;
-                var vid = idMatch[1];
+                var liStr = lis[i] + '';
+                var idM = liStr.match(/\/voddetail\/(\d+)/);
+                if (!idM) continue;
+                var vid = idM[1];
                 if (seen[vid]) continue;
                 seen[vid] = 1;
 
+                // title: 优先 a 的 title 属性 → li 内 a.link-txt 的 title 属性 (顺序不定) → img alt
                 var title = '';
                 try { title = parseDomForHtml(lis[i], 'a.link-txt&&title') || ''; } catch (e) {}
                 if (!title) {
-                    try { title = parseDomForHtml(lis[i], 'a.link-txt&&Text') || ''; } catch (e) {}
+                    // 顺序无关:只要标签内同时含 link-txt 和 title=
+                    var aBlocks = liStr.match(/<a\b[^>]*>/g) || [];
+                    for (var ai = 0; ai < aBlocks.length; ai++) {
+                        if (aBlocks[ai].indexOf('link-txt') < 0) continue;
+                        var tm = aBlocks[ai].match(/\btitle=["']([^"']+)["']/);
+                        if (tm) { title = tm[1]; break; }
+                    }
                 }
                 if (!title) {
-                    try {
-                        var img = parseDomForHtml(lis[i], 'img&&alt') || '';
-                        title = img;
-                    } catch (e) {}
+                    var am = liStr.match(/<img[^>]+alt=["']([^"']+)["']/);
+                    if (am) title = am[1];
                 }
 
+                // 副标题(主演/导演)
                 var sub = '';
                 try { sub = parseDomForHtml(lis[i], 'p.sub&&Text') || ''; } catch (e) {}
+                if (!sub) {
+                    var sm = liStr.match(/<p[^>]+class=["'][^"']*sub[^"']*["'][^>]*>([\s\S]*?)<\/p>/);
+                    if (sm) sub = sm[1].replace(/<[^>]+>/g, ' ');
+                }
                 sub = (sub || '').replace(/\s+/g, ' ').trim();
 
                 var pic = 'https://www.nivod.cc/imgs/small/' + vid + '.jpg';
@@ -223,23 +253,40 @@ var rule = {
     search_find_rule: '',
 
     // ============ lazyRule (顶层) ============
+    // 顶层 lazy 字段 $.toString 提取后变成顶层 js: 代码,return 非法
     lazy: $.toString(() => {
+        var __r = '';
         var u = input;
         var m = u.match(/\/vodplay\/(\d+)(?:\/([^?#]+))?/);
-        if (!m) return 'hiker://empty##未识别 vodplay URL';
-        var api = 'https://www.nivod.cc/xhr_playinfo/' + m[1] + (m[2] && m[2] !== 'v' ? '-' + m[2] : '');
-        var html = '';
-        try { html = fetch(api, {headers:{'User-Agent':'MOBILE_UA','Referer':'https://www.nivod.cc/'}}); }
-        catch (e) { return 'hiker://empty##接口失败 ' + e.message; }
-        var data;
-        try { data = JSON.parse(html); }
-        catch (e) { return 'hiker://empty##JSON 解析失败'; }
-        var ps = (data && data.pdatas) || [];
-        if (!ps.length && data && data.more_eps && data.more_eps[0] && data.more_eps[0].plays) {
-            ps = data.more_eps[0].plays;
+        if (!m) {
+            __r = 'hiker://empty##\u672a\u8bc6\u522b vodplay URL';
+        } else {
+            var api = 'https://www.nivod.cc/xhr_playinfo/' + m[1] + (m[2] && m[2] !== 'v' ? '-' + m[2] : '');
+            var html = '';
+            var err = '';
+            try { html = fetch(api, {headers:{'User-Agent':'MOBILE_UA','Referer':'https://www.nivod.cc/'}}); }
+            catch (e) { err = e.message; }
+            if (err) {
+                __r = 'hiker://empty##\u63a5\u53e3\u5931\u8d25 ' + err;
+            } else {
+                var data = null;
+                try { data = JSON.parse(html); } catch (e) {}
+                if (!data) {
+                    __r = 'hiker://empty##JSON \u89e3\u6790\u5931\u8d25';
+                } else {
+                    var ps = (data.pdatas) || [];
+                    if (!ps.length && data.more_eps && data.more_eps[0] && data.more_eps[0].plays) {
+                        ps = data.more_eps[0].plays;
+                    }
+                    if (!ps.length) {
+                        __r = 'hiker://empty##\u65e0\u53ef\u7528\u64ad\u653e\u7ebf\u8def';
+                    } else {
+                        __r = ps[0].playurl;
+                    }
+                }
+            }
         }
-        if (!ps.length) return 'hiker://empty##无可用播放线路';
-        return ps[0].playurl;
+        __r;
     }),
 
     pages: [],
