@@ -139,17 +139,23 @@ var rule = {
                 if (!sHtml || sHtml.length < 100) {
                     d.push({title: '\u641c\u5bfb\u8fd4\u56de\u4e3a\u7a7a (\u53ef\u80fd Cloudflare \u62e6\u622a)', col_type: 'rich_text'});
                 } else {
-                    var trs = parseDomForArray(sHtml, 'table&&tr') || [];
+                    var sBlocks = sHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
                     var n = 0;
-                    for (var i in trs) {
-                        if (!trs[i]) continue;
-                        var href = '';
-                        try { href = parseDomForHtml(trs[i], 'a&&href') || ''; } catch (e) {}
-                        if (!/\/v\/\d+\.html/.test(href)) continue;
-                        var t = '';
-                        try { t = parseDomForHtml(trs[i], 'a&&title') || parseDomForHtml(trs[i], 'a&&Text') || ''; } catch (e) {}
-                        var subj = '';
-                        try { subj = parseDomForHtml(trs[i], 'td,1&&Text') || ''; } catch (e) {}
+                    var sSeen = {};
+                    for (var i = 0; i < sBlocks.length; i++) {
+                        var tr = sBlocks[i];
+                        var dM = tr.match(/\/v\/(\d{8})\.html/);
+                        if (!dM) continue;
+                        var key = dM[1];
+                        if (sSeen[key]) continue;
+                        sSeen[key] = 1;
+                        var tM = tr.match(/<a[^>]*\btitle="([^"]+)"/);
+                        var t = tM ? tM[1] : key;
+                        var hM = tr.match(/href="([^"]*\/v\/\d{8}\.html)"/);
+                        var href = hM ? hM[1] : '';
+                        var tds = tr.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [];
+                        var stripTd2 = function (s) { return (s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); };
+                        var subj = tds.length >= 2 ? stripTd2(tds[1]) : '';
                         var absHref = /^https?:/.test(href) ? href : ('https://www.zyshow.co' + href.replace(/^\.\.?\//, '/'));
                         d.push({
                             title: t,
@@ -180,20 +186,25 @@ var rule = {
             if (fatalErr) {
                 d.push({title: fatalErr, col_type: 'rich_text'});
             } else {
-                var trs = [];
-                try { trs = parseDomForArray(html, 'table&&tr') || []; } catch (e) {}
+                // \u7ad9\u70b9\u6709 2 \u4e2a table (\u5bfc\u822a + \u6570\u636e), parseDomForArray('table&&tr') \u5728\u6d77\u9614 JSEngine \u4e0d\u7a33, \u7528\u6b63\u5219\u5207 tr
+                var blocks = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
                 var added = 0;
-                for (var i in trs) {
-                    if (!trs[i]) continue;
-                    var href = '';
-                    try { href = parseDomForHtml(trs[i], 'a&&href') || ''; } catch (e) {}
-                    if (!/\/v\/\d+\.html/.test(href)) continue;
-                    var t = '';
-                    try { t = parseDomForHtml(trs[i], 'a&&title') || parseDomForHtml(trs[i], 'a&&Text') || ''; } catch (e) {}
-                    var subj = '';
-                    try { subj = parseDomForHtml(trs[i], 'td,1&&Text') || ''; } catch (e) {}
-                    var guests = '';
-                    try { guests = parseDomForHtml(trs[i], 'td,2&&Text') || ''; } catch (e) {}
+                var seen = {};
+                for (var i = 0; i < blocks.length; i++) {
+                    var tr = blocks[i];
+                    var dM = tr.match(/\/v\/(\d{8})\.html/);
+                    if (!dM) continue;
+                    var date = dM[1];
+                    if (seen[date]) continue;
+                    seen[date] = 1;
+                    var tM = tr.match(/<a[^>]*\btitle="([^"]+)"/);
+                    var t = tM ? tM[1] : date;
+                    var hM = tr.match(/href="([^"]*\/v\/\d{8}\.html)"/);
+                    var href = hM ? hM[1] : '';
+                    var tds = tr.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [];
+                    var stripTd = function (s) { return (s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); };
+                    var subj = tds.length >= 2 ? stripTd(tds[1]) : '';
+                    var guests = tds.length >= 3 ? stripTd(tds[2]) : '';
                     var absHref = /^https?:/.test(href) ? href : ('https://www.zyshow.co' + href.replace(/^\.\.?\//, '/'));
                     var desc = (subj ? subj.substring(0, 50) : '') + (guests ? '\n' + guests.substring(0, 40) : '');
                     d.push({
