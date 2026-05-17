@@ -47,18 +47,8 @@ const vm = require('vm');
     if (rule.headers && typeof rule.headers === 'object') {
         rule.headers = JSON.stringify(rule.headers);
     }
-    // 输出单规则数组 (海阔影视类批量导入支持)
-    const out = [rule];
-    const json = JSON.stringify(out, null, 2);
-    const outFile = path.join(__dirname, 'clipboard.json');
-    fs.writeFileSync(outFile, json, 'utf8');
-
     // 单规则 JSON (非数组), 部分版本只接受这种
     fs.writeFileSync(path.join(__dirname, 'single.json'), JSON.stringify(rule, null, 2), 'utf8');
-
-    // 海阔分享文本格式 (旧版): "海阔视界·我的视频·"+name+"·"+JSON
-    const shareText = '海阔视界·我的视频·' + rule.title + '·' + JSON.stringify(out);
-    fs.writeFileSync(path.join(__dirname, 'share.txt'), shareText, 'utf8');
 
     // === 新版海阔视界 v2 字段格式 ===
     // 字段名变化: searchUrl->search_url, search_find_rule->searchFind, headers->ua, 删除非 v2 字段
@@ -97,6 +87,14 @@ const vm = require('vm');
         preRule: rule.preRule || ''
     };
     const v2Json = JSON.stringify(v2);
+
+    // 订阅源: v2 数组 (class_url 已是绝对 URL)
+    const clip = JSON.stringify([v2], null, 2);
+    fs.writeFileSync(path.join(__dirname, 'clipboard.json'), clip, 'utf8');
+
+    // 旧版分享文本也用 v2 数组
+    const shareText = '海阔视界·我的视频·' + rule.title + '·' + JSON.stringify([v2]);
+    fs.writeFileSync(path.join(__dirname, 'share.txt'), shareText, 'utf8');
 
     // 新版口令: 视频规则
     const tokenVideo = '海阔视界规则分享，当前分享的是：视频￥video_rule_v2￥' + v2Json;
@@ -139,9 +137,9 @@ const vm = require('vm');
     fs.writeFileSync(path.join(__dirname, 'token-quick.txt'), tokenQuick, 'utf8');
 
     console.log('已生成:');
-    console.log('  clipboard.json   (规则数组, 旧版)', Buffer.byteLength(json), 'B');
-    console.log('  single.json      (单条规则, 旧版)');
-    console.log('  share.txt        (旧版分享文本: 海阔视界·我的视频·)');
+    console.log('  clipboard.json   (订阅源: v2 数组)', Buffer.byteLength(clip), 'B');
+    console.log('  single.json      (单条规则, 旧版字段, 仅备用)');
+    console.log('  share.txt        (分享文本, v2 数组)');
     console.log('  token-video.txt  (新版口令: 视频￥video_rule_v2)');
     console.log('  token-home.txt   (新版口令: 首页频道￥home_rule_v2)');
     console.log('  token-search.txt (新版口令: 搜索引擎￥search_rule_v2)');
