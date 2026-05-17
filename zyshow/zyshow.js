@@ -13,17 +13,24 @@
  */
 
 // 嗅探 lazy: 输入是单集页 URL, 输出 m3u8 直链.
-// IIFE 包一层是因为海阔 lazyRule 体当表达式执行, 顶层 return 触发 JSEngine#66
+// 海阔 @lazyRule=.js:<code> 不允许任何 return 语句 (#14/#66 错误),
+// 也不允许 IIFE — 用 __r 变量累积结果, 最后一行表达式作返回值, 参照 zyshow11 写法.
 var LAZY_CODE =
-    "(function(){" +
-    "var html = fetch(input, {headers:{'User-Agent':'MOBILE_UA'}}); " +
-    "var m = html.match(/url\\|([A-Za-z0-9+\\/=]{40,})\\|/); " +
-    "if (!m) return 'hiker://empty##未抓取到 base64'; " +
-    "var jumpUrl = 'https://www.zyshow.co/url=' + m[1]; " +
-    "var ck = ''; try { ck = fetch(jumpUrl, {headers:{'User-Agent':'MOBILE_UA'}}); } catch (e) { return 'hiker://empty##跳转失败 ' + e.message; } " +
-    "var m2 = (ck||'').match(/urls\\s*=\\s*['\"]([^'\"]+)['\"]/); " +
-    "return m2 ? m2[1] + ';{Referer@https://sc.zyshow.net/}' : 'hiker://empty##未抓取到 m3u8';" +
-    "})()";
+    "var __r = ''; " +
+    "var html = ''; try { html = fetch(input, {headers:{'User-Agent':'MOBILE_UA','Referer':'https://www.zyshow.co/'}}); } catch (e) { __r = 'hiker://empty##加载失败 ' + e.message; } " +
+    "if (!__r) { " +
+    "  var m = html.match(/url\\|([A-Za-z0-9+\\/=]{40,})\\|/); " +
+    "  if (!m) __r = 'hiker://empty##未抓取到 base64'; " +
+    "  else { " +
+    "    var jumpUrl = 'https://www.zyshow.co/url=' + m[1]; " +
+    "    var ck = ''; try { ck = fetch(jumpUrl, {headers:{'User-Agent':'MOBILE_UA','Referer':'https://www.zyshow.co/'}}); } catch (e) { __r = 'hiker://empty##跳转失败 ' + e.message; } " +
+    "    if (!__r) { " +
+    "      var m2 = (ck||'').match(/urls\\s*=\\s*['\"]([^'\"]+)['\"]/); " +
+    "      __r = m2 ? m2[1] + ';{Referer@https://sc.zyshow.net/}' : 'hiker://empty##未抓取到 m3u8'; " +
+    "    } " +
+    "  } " +
+    "} " +
+    "__r";
 
 // 7 个大分类 (映射到首页 dropdown-toggle 标题文本)
 var CAT_SLUGS  = ['th', 'zm', 'jx', 'ss', 'ms', 'yx', 'yl'];

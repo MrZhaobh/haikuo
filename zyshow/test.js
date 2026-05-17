@@ -136,17 +136,20 @@ function header(t) { console.log('\n=== ' + t + ' ==='); }
             const m = ep.url.match(/^([^@]+)@lazyRule=\.js:(.+)$/);
             const epUrl = m[1];
             const lazyCode = m[2];
-            // 语法校验先
-            try { new Function('input', 'return ' + lazyCode); }
-            catch (e) { console.log('  FAIL lazy syntax:', e.message); failed++; return; }
-            // 实跑: 模拟 fetch
-            const fetchSync2 = async u => fetchSync(u);
-            const ctx2 = {
-                input: epUrl,
-                fetch: u => { throw new Error('fetch_async_needed:' + u); },
-                console,
-            };
-            // 先抓 base64,再抓 302 跳转
+
+            // 1) 语法校验: lazy 代码体必须是合法 JS 语句块 (不能用 Function('return '+code), 那要求是表达式)
+            try { new Function(lazyCode); }
+            catch (e) { console.log('  FAIL lazy syntax:', e.message); failed++; }
+
+            // 2) 顶层 return 检测: 海阔 JSEngine 不允许 (#14/#66). new Function 不抓得到 — 单独 regex 扫.
+            //    跳过 IIFE 里的 return (函数体内合法)
+            const stripped = lazyCode.replace(/\(function\s*\(\)\s*\{[\s\S]*?\}\s*\)\s*\(\s*\)/g, '').replace(/function[^{]*\{[\s\S]*?\}/g, '');
+            if (/(^|[^\w.])return\b/.test(stripped)) {
+                console.log('  FAIL lazy: 顶层 return 语句, 海阔会报 JSEngine#14/#66 (改用 __r 变量累积模式)');
+                failed++;
+            }
+
+            // 3) 实跑 lazy 链路: 真 fetch + 真嗅 m3u8
             let html1, html2;
             try { html1 = await fetchSync(epUrl); } catch (e) { console.log('  FAIL fetch ep page:', e.message); failed++; return; }
             const base64M = html1.match(/url\|([A-Za-z0-9+\/=]{40,})\|/);
