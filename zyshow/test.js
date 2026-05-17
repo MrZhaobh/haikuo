@@ -82,8 +82,9 @@ function header(t) { console.log('\n=== ' + t + ' ==='); }
         console.log('  OK');
     }
 
-    header('Step 2: each category → program grid (find_rule)');
+    header('Step 2: each category → program grid (find_rule) + pic_url 可达性');
     const sampleShows = {};
+    const allShows = [];
     for (let i = 0; i < urls.length; i++) {
         const cat = names[i];
         const url = urls[i];
@@ -95,14 +96,30 @@ function header(t) { console.log('\n=== ' + t + ' ==='); }
                 console.log('  FAIL [' + cat + '] no shows, lines:', items.map(it => it.title).slice(0, 3));
                 failed++;
             } else {
-                console.log('  OK   [' + cat + '] ' + shows.length + ' shows, e.g. ' + shows[0].title + ' → ' + shows[0].url);
+                const missPic = shows.filter(s => !s.pic_url).length;
+                console.log('  OK   [' + cat + '] ' + shows.length + ' shows, e.g. ' + shows[0].title + (missPic ? ' (' + missPic + ' 缺 pic_url)' : ''));
                 sampleShows[cat] = shows[0];
+                allShows.push(...shows);
             }
             if (errLine) console.log('       (msg: ' + errLine.title + ')');
         } catch (e) {
             console.log('  FAIL [' + cat + '] exception:', e.message);
             failed++;
         }
+    }
+    // 并发 HEAD 测所有 pic_url 是否 200
+    if (allShows.length > 0) {
+        const picUrls = [...new Set(allShows.map(s => (s.pic_url || '').split('@')[0]).filter(Boolean))];
+        const head = u => new Promise(res => {
+            const req = https.request(u, { method: 'HEAD', headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.zyshow.co/' } }, r => { res(r.statusCode); r.resume(); });
+            req.on('error', () => res(0));
+            req.setTimeout(8000, () => { req.destroy(); res(0); });
+            req.end();
+        });
+        const results = await Promise.all(picUrls.map(head));
+        const bad = picUrls.filter((u, i) => results[i] !== 200);
+        if (bad.length === 0) console.log('  OK   pic_url 全部 200 (' + picUrls.length + ' 个 unique)');
+        else { console.log('  FAIL pic_url 非 200: ' + bad.length + '/' + picUrls.length + ', e.g. ' + bad[0]); failed++; }
     }
 
     header('Step 3: pick a show → episode list (detail_find_rule)');

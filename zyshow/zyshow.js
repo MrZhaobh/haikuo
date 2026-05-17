@@ -126,6 +126,7 @@ var rule = {
                     d.push({
                         title: s.name,
                         desc: 'zyshow.co/' + s.slug,
+                        pic_url: 'https://www.zyshow.co/img/' + s.slug + '.jpg@Referer=https://www.zyshow.co/',
                         url: 'https://www.zyshow.co/' + s.slug + '/',
                         col_type: 'movie_3'
                     });
