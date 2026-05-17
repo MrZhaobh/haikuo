@@ -18,6 +18,9 @@ const SITES = [
     { name: 'mtyy',      file: 'mtyy/clipboard.json' },    // 麦田影院 (decode.js 由 SQLite 备份导出)
 ];
 
+// 订阅源里所有规则统一分组 (各站源数据 group 不变, 仅在聚合输出里覆盖)
+const FORCE_GROUP = '#️⃣影视规则⬆️';
+
 const ruleArr = [];
 for (const site of SITES) {
     const cb = path.join(__dirname, site.file);
@@ -27,7 +30,10 @@ for (const site of SITES) {
     }
     const arr = JSON.parse(fs.readFileSync(cb, 'utf8'));
     if (!Array.isArray(arr)) { console.warn('  skip', site.name, '- not array'); continue; }
-    for (const r of arr) ruleArr.push(r);
+    for (const r of arr) {
+        r.group = FORCE_GROUP;
+        ruleArr.push(r);
+    }
     console.log('  +', site.name, '(' + arr.length + ' rule)');
 }
 
