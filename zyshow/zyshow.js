@@ -86,102 +86,68 @@ var rule = {
         var isSearch = (cat === 'search');
         var isCategoryView = !!catM && !isSearch;
 
-        // === 搜索分支: WebView 加载 search.asp 过 CF ===
-        // token 哨兵: 仅当 zys_token 变化时才跑 WebView, 避免切回 tab 自动重搜
+        // === 搜索分支: 本地节目名模糊匹配 ===
+        // 站点 search.asp 被 CF Managed Challenge 单独拦截 (首页 200, search.asp 403),
+        // WebView 60s 通不过 — 改为 fetch 首页 dropdown-menu 解出 105 节目, 按节目名子串匹配.
+        // 代价: 搜不了嘉宾/主题, 但秒回 100% 成功.
         if (isSearch) {
             var kw = getVar('zys_kw', '');
-            var curToken = getVar('zys_token', '');
-            var doneToken = getVar('zys_done_token', '');
-            var shouldSearch = kw && curToken && curToken !== doneToken;
             d.push({
                 title: '搜索',
-                desc: '输入关键词后点 "搜索" 按钮 (CF 防护, 首次过盾约 5-15 秒)',
+                desc: '按节目名模糊匹配 (站点搜索被 CF 拦, 改本地匹配)',
                 col_type: 'input',
-                url: "(putVar({key:'zys_kw',value:input}), putVar({key:'zys_token',value:''+Date.now()}), refreshPage(false), 'hiker://empty')",
+                url: "(putVar({key:'zys_kw',value:input}), refreshPage(false), 'hiker://empty')",
                 extra: {
                     defaultValue: kw,
                     titleVisible: true
                 }
             });
-            if (!shouldSearch) {
-                if (kw) {
-                    d.push({title: '上次关键词: ' + kw + ' (按"搜索"重新搜)', col_type: 'rich_text'});
-                } else {
-                    d.push({title: '请输入关键词后点右侧 "搜索"', col_type: 'rich_text'});
-                }
+            if (!kw) {
+                d.push({title: '请输入节目名 (如 "11点" "热吵" "美食")', col_type: 'rich_text'});
             } else {
-                d.push({title: '搜索中: ' + kw + ' …', col_type: 'rich_text'});
-                // 直接 GET search.asp — ASP 的 Request("bh") 同时收 form 和 querystring,
-                // 且 WebView 加载会让 CF 自动通关后 redirect 到目标 URL
-                // GBK 编码用海阔 decodeStr(str, 'GBK') (尽管名字叫 decode, 实际是 encode + percent)
-                var encoded;
-                try { encoded = decodeStr(kw, 'GBK'); }
-                catch (e) { encoded = encodeURIComponent(kw); }
-                var sUrl = 'https://www.zyshow.co/search.asp?bh=' + encoded;
-
-                // checkJs: 等到 tr 表里出现 /v/YYYYMMDD.html 即认为是结果页
-                var checkJs = 'try {' +
-                    ' var trs = document.querySelectorAll("tr");' +
-                    ' for (var i = 0; i < trs.length; i++) {' +
-                    '  if (/\\/v\\/\\d{8}\\.html/.test(trs[i].innerHTML)) return "1";' +
-                    ' }' +
-                    ' return null;' +
-                    '} catch(e) { return null; }';
                 var sHtml = '';
-                try {
-                    sHtml = fetchCodeByWebView(sUrl, {
-                        timeout: 60000,
-                        headers: {'User-Agent': 'MOBILE_UA', 'Referer': 'https://www.zyshow.co/'},
-                        checkJs: checkJs
-                    }) || '';
-                } catch (e) {
-                    d.push({title: 'WebView 加载失败: ' + e.message, col_type: 'rich_text'});
-                }
-                // 哨兵: 不管搜索成功/失败/超时, 都把当前 token 标记为已处理
-                // 防止用户切回搜索 tab 时, find_rule 重渲染又触发一次 60s WebView
-                putVar({key: 'zys_done_token', value: curToken});
-                if (sHtml && sHtml.length >= 200) {
-                    var sBlocks = sHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
-                    var hitCount = 0;
-                    var sSeen = {};
-                    for (var si = 0; si < sBlocks.length; si++) {
-                        var sTr = sBlocks[si];
-                        var sDM = sTr.match(/\/v\/(\d{8})\.html/);
-                        if (!sDM) continue;
-                        var sDate = sDM[1];
-                        var sHM = sTr.match(/href="([^"]*\/v\/\d{8}\.html)"/);
-                        var sHref = sHM ? sHM[1] : '';
-                        if (sSeen[sHref]) continue;
-                        sSeen[sHref] = 1;
-                        var sTM = sTr.match(/<a[^>]*\btitle="([^"]+)"/);
-                        var sT = sTM ? sTM[1] : sDate;
-                        var sTds = sTr.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [];
-                        var sStripTd = function (s) { return (s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); };
-                        var sSubj = sTds.length >= 2 ? sStripTd(sTds[1]) : '';
-                        var sGuests = sTds.length >= 3 ? sStripTd(sTds[2]) : '';
-                        var sAbsHref = /^https?:/.test(sHref) ? sHref : ('https://www.zyshow.co' + sHref.replace(/^\.\.?\//, '/'));
-                        var sDesc = (sSubj ? sSubj.substring(0, 50) : '') + (sGuests ? '\n' + sGuests.substring(0, 40) : '');
-                        d.push({
-                            title: sT,
-                            desc: sDesc,
-                            url: sAbsHref + '@lazyRule=.js:' + LAZY_CODE,
-                            col_type: 'text_1'
-                        });
-                        hitCount++;
-                    }
-                    if (hitCount === 0) {
-                        // 显示 title + 长度作 debug
-                        var titleM = sHtml.match(/<title[^>]*>([^<]*)<\/title>/i);
-                        var pgTitle = titleM ? titleM[1].trim() : '(no title)';
-                        d.push({title: '未搜到 "' + kw + '"', col_type: 'rich_text'});
-                        d.push({title: '[debug] page title: ' + pgTitle + ' | len: ' + sHtml.length, col_type: 'rich_text'});
-                    }
-                } else if (!sHtml) {
-                    d.push({title: 'WebView 超时或被 CF 拦截 (timeout 60s)', col_type: 'rich_text'});
-                    d.push({title: '[debug] checkJs 未匹配到 /v/YYYYMMDD.html 模式, 看不到结果页 tr 表', col_type: 'rich_text'});
+                try { sHtml = fetch('https://www.zyshow.co/', {headers: {'User-Agent': 'MOBILE_UA'}}) || ''; } catch (e) {}
+                if (!sHtml || sHtml.length < 200) {
+                    d.push({title: '首页加载失败, 无法搜索', col_type: 'rich_text'});
                 } else {
-                    // sHtml 太短 (< 200 字节)
-                    d.push({title: '[debug] WebView 返回过短: ' + sHtml.length + ' 字节, 内容: ' + sHtml.substring(0, 150), col_type: 'rich_text'});
+                    // 解析所有 dropdown-menu 节目
+                    var sDropdowns = sHtml.match(/<li class="dropdown">[\s\S]*?<\/ul><\/li>/g) || [];
+                    var allShows = [];
+                    var seenSlug = {};
+                    for (var di = 0; di < sDropdowns.length; di++) {
+                        var sSeg = sDropdowns[di];
+                        var sCatM = sSeg.match(/<a[^>]*class="dropdown-toggle"[^>]*>\s*([^<\s][^<]*?)\s*<b/);
+                        var sCatTitle = sCatM ? sCatM[1].trim() : '';
+                        var sLiRe = /<li>\s*<a[^>]*href="\/([a-zA-Z0-9_]+)\/"[^>]*title="([^"]+)"/g;
+                        var slm;
+                        while ((slm = sLiRe.exec(sSeg)) !== null) {
+                            if (seenSlug[slm[1]]) continue;
+                            seenSlug[slm[1]] = 1;
+                            allShows.push({slug: slm[1], name: slm[2], cat: sCatTitle});
+                        }
+                    }
+                    // 子串匹配 (大小写不敏感)
+                    var kwLower = kw.toLowerCase();
+                    var hits = [];
+                    for (var hi = 0; hi < allShows.length; hi++) {
+                        if (allShows[hi].name.toLowerCase().indexOf(kwLower) >= 0) {
+                            hits.push(allShows[hi]);
+                        }
+                    }
+                    d.push({title: '"' + kw + '"  ·  ' + hits.length + ' 个匹配', col_type: 'rich_text'});
+                    for (var hj = 0; hj < hits.length; hj++) {
+                        var hs = hits[hj];
+                        d.push({
+                            title: hs.name,
+                            desc: hs.cat,
+                            pic_url: 'https://www.zyshow.co/img/' + hs.slug + '.jpg@Referer=https://www.zyshow.co/',
+                            url: 'https://www.zyshow.co/' + hs.slug + '/',
+                            col_type: 'movie_3'
+                        });
+                    }
+                    if (hits.length === 0) {
+                        d.push({title: '无匹配节目, 试试更短的关键词 (如 "美食")', col_type: 'rich_text'});
+                    }
                 }
             }
             setResult(d);

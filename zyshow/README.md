@@ -15,11 +15,11 @@
 
 ## 搜索
 
-首页第一个 tab 「🔍 搜索」是 WebView 方案 — 站点对 `search.asp` 路径配了 Cloudflare Managed Challenge, 裸 `fetch` 全部 403。规则用 `fetchCodeByWebView` 加载首页过盾, 然后注入 form 自动 POST 提交, 在结果页等 tr 表出现后取源码。
+首页第一个 tab 「🔍 搜索」**按节目名做本地模糊匹配**。
 
-代价: 首次过盾 5-15 秒, cookie 有效期内后续搜索约 1-2 秒。CF cookie 失效后需重新过盾。
+站点的 `/search.asp` 路径单独挂了 Cloudflare Managed Challenge (首页 200 OK, search.asp 403 Just a moment), WebView 60s 也通不过盾。改用方案:fetch 首页 → 解析 dropdown-menu 拿到全部 105 个节目 (slug + 中文名) → 在节目名上做子串匹配 (大小写不敏感)。秒回, 无 CF 问题。
 
-注意: 站点搜索按"嘉宾/主题"匹配, 不是按节目名 — 搜「11點」可能无果, 搜「吴宗宪」「美食」更靠谱。
+代价: 只能按节目名搜, 搜不了嘉宾/主题。如要搜嘉宾, 直接在对应节目集数列表里翻 desc。
 
 ## 工作原理
 
