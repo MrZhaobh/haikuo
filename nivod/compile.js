@@ -1,11 +1,11 @@
 /**
- * 把 zyshow.js 编译成海阔视界 v2 规则 + 各类口令
+ * 把 nivod.js 编译成海阔视界 v2 规则 + 各类口令
  * 复用 sugo/compile.js 模板
  */
 const fs = require('fs');
 const path = require('path');
 
-const ruleFile = path.join(__dirname, 'zyshow.js');
+const ruleFile = path.join(__dirname, 'nivod.js');
 const src = fs.readFileSync(ruleFile, 'utf8');
 
 function fnToHikerJsString(fn, ...args) {
@@ -41,7 +41,7 @@ const vm = require('vm');
     }
     fs.writeFileSync(path.join(__dirname, 'single.json'), JSON.stringify(rule, null, 2), 'utf8');
 
-    const HOST = 'https://www.zyshow.co';
+    const HOST = 'https://www.nivod.cc';
     const absClassUrl = (rule.class_url || '').split('&').map(u => {
         if (!u) return u;
         if (/^https?:\/\//i.test(u)) return u;
@@ -93,7 +93,7 @@ const vm = require('vm');
     fs.writeFileSync(path.join(__dirname, 'token-search.txt'), tokenSearch, 'utf8');
 
     const miniRule = Object.assign({}, v2, {
-        title: 'zyshow', author: 'claude', version: 0, icon: '', proxy: ''
+        title: 'nivod', author: 'claude', version: 0, icon: '', proxy: ''
     });
     const miniJson = JSON.stringify(miniRule);
     const miniB64 = Buffer.from(miniJson, 'utf8').toString('base64');

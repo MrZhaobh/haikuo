@@ -14,7 +14,7 @@ const path = require('path');
 
 const SITES = [
     { name: 'sugoideas', file: 'sugoideas-rules.json' },   // sugo (compile.js 输出)
-    { name: 'zyshow',    file: 'zyshow/clipboard.json' },
+    { name: 'nivod',     file: 'nivod/clipboard.json' },
 ];
 
 const ruleArr = [];
