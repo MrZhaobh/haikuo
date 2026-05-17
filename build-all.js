@@ -15,6 +15,7 @@ const path = require('path');
 const SITES = [
     { name: 'sugoideas', file: 'sugoideas-rules.json' },   // sugo (compile.js 输出)
     { name: 'nivod',     file: 'nivod/clipboard.json' },
+    { name: 'mtyy',      file: 'mtyy/clipboard.json' },    // 麦田影院 (decode.js 由 SQLite 备份导出)
 ];
 
 const ruleArr = [];
