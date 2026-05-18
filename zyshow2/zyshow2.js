@@ -430,248 +430,64 @@ var rule = {
     }, LAZY_CODE, SITE_HOST),
 
     // ============ pages: 子页面 ============
-    // CF Turnstile 实验矩阵: getCookie 是实验中心, exp1..exp6 是 6 种 UA+polyfill+prewarm 组合的 WebView
+    // ⚠ CF Turnstile 解法(2026-05 经实验矩阵 6 种组合验证):
+    //   关键是 extra.ua **留空** —— 让 x5 WebView 用自己的内核 UA, HTTP 头和 JS
+    //   指纹完全一致, Turnstile 一次点过, cf_clearance cookie 自动签发。
+    //   *不要*强行设 ua: 'Mozilla/5.0 ... Chrome/120 ...' —— HTTP UA 假装 Chrome
+    //   但 navigator.userAgent / userAgentData 仍是 x5 内核, CF 立刻识破造假,
+    //   反复 challenge 死循环。 (git log: feat zyshow2: CF Turnstile 实验矩阵)
     pages: (function () {
-        var CHROME_UA = 'Mozilla/5.0 (Linux; Android 12; SM-A536U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36';
-        var EDGE_UA = 'Mozilla/5.0 (Linux; Android 12; SM-G991U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 EdgA/120.0.2210.144';
-
-        // [id, name, uaStr ('' = x5 默认), injectPolyfill, prewarmHome]
-        var EXPERIMENTS = [
-            [1, 'x5默认UA 无注入',           '',         false, false],
-            [2, 'x5默认UA + UAD polyfill',   '',         true,  false],
-            [3, 'Chrome120 UA 无注入',       CHROME_UA,  false, false],
-            [4, 'Chrome120 UA + polyfill',   CHROME_UA,  true,  false],
-            [5, 'Edge Android UA 无注入',    EDGE_UA,    false, false],
-            [6, 'Chrome + polyfill + 暖首页', CHROME_UA, true,  true]
-        ];
-
-        // 子页 1: 实验中心 (顶部日志区 + 6 个实验入口按钮 + 工具按钮)
+        // 子页 1: 一键过 CF —— 加载 /search.asp 触发 challenge, Turnstile 出现后用户点
+        // "我是真人", JS 轮询到 cf_clearance 即 setItem 持久化并返回
         var getCookiePage = {
             name: '获取Cookie',
             path: 'getCookie',
             col_type: 'movie_3',
-            rule: $.toString((SITE_HOST, EXPS_META_JSON) => {
+            rule: $.toString((SITE_HOST) => {
                 var d = [];
-                var EXPS = JSON.parse(EXPS_META_JSON);
-
                 d.push({
-                    title: '📋 CF Turnstile 实验矩阵',
-                    desc: '依次点下方 6 个实验,每个进入后:\n  ① WebView 自动加载 /search.asp\n  ② Turnstile 出现 → 点"我是真人"\n  ③ 30 秒内拿到 cf_clearance 自动写入并返回\n  ④ 超时也自动返回\n  ⑤ 诊断信息在 WebView 底部黑底绿字(不挡操作)\n返回后,下方日志区会刷新对应实验结果。把通过(✅)的实验 id 告诉作者。',
+                    title: '🔑 过 Cloudflare 验证',
+                    desc: 'WebView 会自动加载 /search.asp 触发 CF Turnstile。出现"我是真人"复选框请点它,通过后 cf_clearance cookie 自动保存,返回小程序首页即可正常搜索。\n\n注意:WebView UA 留空(用 x5 内核默认),这是 Turnstile 一次过的关键。',
                     col_type: 'rich_text'
                 });
-
-                // 实验日志区(展示每个实验最近一次结果)
-                var logLines = ['📊 【实验日志】'];
-                var anyPassed = false;
-                for (var i = 0; i < EXPS.length; i++) {
-                    var exp = EXPS[i];
-                    var resJson = getVar('zys2_exp_' + exp.id + '_result', '');
-                    var line = '#' + exp.id + ' ' + exp.name + ':';
-                    if (!resJson) {
-                        line += ' 未运行';
-                    } else {
-                        try {
-                            var r = JSON.parse(resJson);
-                            if (r.gotCf) { line += ' ✅通过 tries=' + r.tries + ' UAD=' + r.hadUAD; anyPassed = true; }
-                            else line += ' ' + (r.timedOut ? '⏱超时' : '❌') + ' tries=' + r.tries + ' cfIfrMax=' + r.cfIframeMax + ' UAD=' + r.hadUAD + ' ckLen=' + (r.cookie || '').length;
-                            if (r.title) line += '\n    title: ' + r.title;
-                            if (r.cookie) line += '\n    ck: ' + r.cookie.substring(0, 100);
-                        } catch (e) { line += ' parseErr:' + e.message; }
-                    }
-                    logLines.push(line);
-                }
-                if (anyPassed) logLines.push('\n🎉 至少一个实验通过! cf_clearance 已写入 zys2_ck_from_wv,点下方"保存到 setItem"持久化');
-                d.push({title: logLines.join('\n'), col_type: 'rich_text'});
-
-                // 6 个实验入口
-                d.push({title: '⬇ 实验入口(逐个点)', col_type: 'rich_text'});
-                for (var j = 0; j < EXPS.length; j++) {
-                    var e2 = EXPS[j];
-                    d.push({
-                        title: '#' + e2.id + ' ' + e2.name,
-                        col_type: 'text_1',
-                        url: 'hiker://page/exp' + e2.id + '?rule=' + MY_RULE.title
-                    });
-                }
-
-                // 工具区
-                d.push({title: '🛠 工具', col_type: 'rich_text'});
                 d.push({
-                    title: '🗑 清空所有实验结果',
-                    col_type: 'text_center_1',
-                    url: 'hiker://empty@lazyRule=.js:var __r=\'\';for(var i=1;i<=6;i++)clearVar(\'zys2_exp_\'+i+\'_result\');refreshPage(false);__r=\'toast://已清空\';__r'
-                });
-                var ckWv = getVar('zys2_ck_from_wv', '');
-                if (ckWv) {
-                    d.push({
-                        title: '💾 把通过实验拿到的 cookie 保存到 setItem',
-                        col_type: 'text_center_1',
-                        url: 'hiker://empty@lazyRule=.js:var __r=\'\';var ck=getVar(\'zys2_ck_from_wv\',\'\');if(ck){setItem(\'zys2_cookie\',ck);__r=\'toast://已保存,可回首页用\';}else __r=\'toast://无 cookie 可保存\';__r'
-                    });
-                }
-                var ckSaved = getItem('zys2_cookie', '');
-                if (ckSaved) d.push({title: '当前已持久化 cookie 片段(setItem):\n' + ckSaved.substring(0, 200), col_type: 'rich_text'});
-
-                setResult(d);
-            }, SITE_HOST, JSON.stringify(EXPERIMENTS.map(function (a) { return {id: a[0], name: a[1]}; })))
-        };
-
-        // 实验子页 helper - 6 个 exp1..exp6 用同一个 rule 模板,UA/polyfill/prewarm 参数化
-        function makeExpPage(id, name, uaStr, polyfill, prewarm) {
-            return {
-                name: 'EXP' + id,
-                path: 'exp' + id,
-                col_type: 'movie_3',
-                rule: $.toString((expId, expName, uaStr, polyfill, prewarm, SITE_HOST) => {
-                    var d = [];
-                    d.push({
-                        title: '🧪 实验 #' + expId + ': ' + expName,
-                        desc: 'URL: ' + SITE_HOST + (prewarm ? '/ (先访问 4s 再跳 /search.asp)' : '/search.asp')
-                            + '\nUA: ' + (uaStr || '<x5 内核默认 UA>')
-                            + '\nUAD polyfill: ' + (polyfill ? '✓ 注入' : '✗ 不注入')
-                            + '\n\nTurnstile 出现时手动点"我是真人"。WebView 底部诊断条会实时更新。'
-                            + '\n30 秒内拿到 cf_clearance 自动写结果并返回。',
-                        col_type: 'rich_text'
-                    });
-
-                    var extraObj = {
+                    col_type: 'x5_webview_single',
+                    url: SITE_HOST + '/search.asp',
+                    desc: 'float&&90%',
+                    title: '',
+                    extra: {
                         canBack: true,
-                        js: $.toString((expId_, polyfill_, prewarm_) => {
-                            // === 注入 navigator.userAgentData polyfill (Turnstile 高熵指纹来源) ===
-                            if (polyfill_) {
-                                try {
-                                    Object.defineProperty(navigator, 'userAgentData', {
-                                        configurable: true,
-                                        get: function () {
-                                            return {
-                                                mobile: true,
-                                                platform: 'Android',
-                                                brands: [
-                                                    {brand: 'Not_A Brand', version: '8'},
-                                                    {brand: 'Chromium', version: '120'},
-                                                    {brand: 'Google Chrome', version: '120'}
-                                                ],
-                                                getHighEntropyValues: function (hints) {
-                                                    return Promise.resolve({
-                                                        mobile: true,
-                                                        platform: 'Android',
-                                                        platformVersion: '12.0.0',
-                                                        architecture: 'arm',
-                                                        bitness: '64',
-                                                        model: 'SM-A536U',
-                                                        uaFullVersion: '120.0.6099.230',
-                                                        fullVersionList: [
-                                                            {brand: 'Not_A Brand', version: '8.0.0.0'},
-                                                            {brand: 'Chromium', version: '120.0.6099.230'},
-                                                            {brand: 'Google Chrome', version: '120.0.6099.230'}
-                                                        ],
-                                                        brands: [
-                                                            {brand: 'Not_A Brand', version: '8'},
-                                                            {brand: 'Chromium', version: '120'},
-                                                            {brand: 'Google Chrome', version: '120'}
-                                                        ]
-                                                    });
-                                                },
-                                                toJSON: function () { return {brands: this.brands, mobile: this.mobile, platform: this.platform}; }
-                                            };
-                                        }
-                                    });
-                                    try { fba.log('zys2 exp ' + expId_ + ': UAD polyfill installed'); } catch (e) {}
-                                } catch (e) { try { fba.log('zys2 polyfill err: ' + e.message); } catch (ee) {} }
-                            }
-
-                            var phase = prewarm_ ? 'prewarm' : 'main';
-                            if (prewarm_) {
-                                setTimeout(function () {
-                                    try { location.href = 'https://www.zyshow.co/search.asp'; } catch (e) {}
-                                    phase = 'main';
-                                }, 4000);
-                            }
-
-                            // 诊断条放 WebView 底部 (不挡 Turnstile 复选框, Turnstile 通常在中央)
-                            function ensurePanel() {
-                                var p = document.getElementById('__zys2_diag');
-                                if (p) return p;
-                                p = document.createElement('div');
-                                p.id = '__zys2_diag';
-                                p.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:2147483647;'
-                                    + 'background:rgba(0,0,0,0.88);color:#0f0;font:10px/1.3 monospace;'
-                                    + 'padding:4px 6px;max-height:30vh;overflow:auto;white-space:pre-wrap;'
-                                    + 'word-break:break-all;border-top:1px solid #0f0;pointer-events:none;';
-                                (document.body || document.documentElement).appendChild(p);
-                                return p;
-                            }
-
-                            var tries = 0, cfIframeMax = 0, maxTries = 60; // 30 秒 (500ms * 60)
-                            function finish(gotCf, timedOut, cookie, hadUAD, t) {
-                                var result = {
-                                    expId: expId_, gotCf: gotCf, timedOut: timedOut,
-                                    tries: tries, cfIframeMax: cfIframeMax, hadUAD: hadUAD,
-                                    cookie: (cookie || '').substring(0, 250),
-                                    title: (t || '').substring(0, 60)
-                                };
-                                try { fba.putVar('zys2_exp_' + expId_ + '_result', JSON.stringify(result)); } catch (e) {}
-                                if (gotCf && cookie) {
-                                    try { fba.putVar('zys2_ck_from_wv', cookie); } catch (e) {}
-                                    try { fba.toast('#' + expId_ + ' ✅ 通过'); } catch (e) {}
-                                } else {
-                                    try { fba.toast('#' + expId_ + (timedOut ? ' ⏱超时' : ' ❌')); } catch (e) {}
-                                }
-                                try { fba.parseLazyRule($$$().lazyRule(() => { back(); })); } catch (e) {}
-                            }
-
+                        // ⚠ 不设 ua —— 让 x5 用自己内核默认 UA, HTTP/JS 指纹一致 CF 才放行
+                        js: $.toString(() => {
+                            var tries = 0;
                             function check() {
                                 tries++;
-                                var ck = '';
-                                try { ck = (fba.getCookie(location.href) || document.cookie || ''); } catch (e) {}
                                 try {
-                                    var t = document.title || '';
-                                    var chForm = !!document.querySelector('#challenge-form');
-                                    var cfIframe = document.querySelectorAll('iframe[src*="challenges.cloudflare.com"]').length;
-                                    if (cfIframe > cfIframeMax) cfIframeMax = cfIframe;
-                                    var isChallenge = /just a moment|attention required/i.test(t) || chForm || cfIframe > 0;
-                                    var hasReal = !!(document.querySelector('.dropdown-menu')
-                                                  || document.querySelector('input[type=search]')
-                                                  || document.querySelector('input[name="q"]')
-                                                  || document.querySelector('form[action*="search"]'));
-                                    var hadUAD = !!navigator.userAgentData;
-                                    var gotCf = ck.indexOf('cf_clearance') >= 0;
-
-                                    ensurePanel().textContent = [
-                                        '#' + expId_ + ' phase=' + phase + ' tries=' + tries + '/' + maxTries,
-                                        'URL: ' + location.pathname + location.search,
-                                        'TITLE: ' + t.substring(0, 55),
-                                        'chForm=' + chForm + ' cfIfr=' + cfIframe + ' (max=' + cfIframeMax + ')',
-                                        'isCh=' + isChallenge + ' hasReal=' + hasReal,
-                                        'UAD=' + (hadUAD ? (navigator.userAgentData.mobile + '/' + navigator.userAgentData.platform) : 'undefined'),
-                                        'ck(' + ck.length + '): ' + ck.substring(0, 90),
-                                        'gotCf=' + gotCf
-                                    ].join('\n');
-
-                                    if (gotCf && phase === 'main') { finish(true, false, ck, hadUAD, t); return; }
-                                    if (tries >= maxTries) { finish(false, true, ck, hadUAD, t); return; }
-                                } catch (e) {
-                                    try { fba.log('zys2 exp ' + expId_ + ' err: ' + e.message); } catch (ee) {}
-                                }
-                                setTimeout(check, 500);
+                                    var ck = '';
+                                    try { ck = (fba.getCookie(location.href) || document.cookie || ''); } catch (e) {}
+                                    if (ck.indexOf('cf_clearance') >= 0) {
+                                        fba.putVar('zys2_ck_from_wv', ck);
+                                        fba.toast('✅ 已过 CF, 保存 cookie 中');
+                                        fba.parseLazyRule($$$().lazyRule(() => {
+                                            var c = getVar('zys2_ck_from_wv', '');
+                                            if (c) setItem('zys2_cookie', c);
+                                            back();
+                                            refreshPage();
+                                        }));
+                                        return;
+                                    }
+                                } catch (e) { try { fba.log('zys2 ck err: ' + e.message); } catch (ee) {} }
+                                if (tries < 240) setTimeout(check, 500);
+                                else { try { fba.toast('120s 内未过 CF, 请手动重试'); } catch (e) {} }
                             }
                             setTimeout(check, 1500);
-                        }, expId, polyfill, prewarm)
-                    };
-                    if (uaStr) extraObj.ua = uaStr;  // 留空 = x5 默认 UA
+                        })
+                    }
+                });
+                setResult(d);
+            }, SITE_HOST)
+        };
 
-                    d.push({
-                        col_type: 'x5_webview_single',
-                        url: SITE_HOST + (prewarm ? '/' : '/search.asp'),
-                        desc: 'float&&88%',
-                        title: '',
-                        extra: extraObj
-                    });
-
-                    setResult(d);
-                }, id, name, uaStr, polyfill, prewarm, SITE_HOST)
-            };
-        }
 
         // ----- 子页 N: 索引构建器 -----
         var indexerPage = {
@@ -798,13 +614,7 @@ var rule = {
             }, CAT_TABS, FULL_HEADERS_JSON, SITE_HOST)
         };
 
-        // 拼装 pages 数组
-        var pages = [getCookiePage];
-        EXPERIMENTS.forEach(function (a) {
-            pages.push(makeExpPage(a[0], a[1], a[2], a[3], a[4]));
-        });
-        pages.push(indexerPage);
-        return pages;
+        return [getCookiePage, indexerPage];
     })()
 };
 
