@@ -107,7 +107,19 @@ var rule = {
         (function () {
             var cookie = getItem('zys2_cookie', '');
             var indexExists = false;
-            try { indexExists = !!(readFile('hiker://files/cache/zyshow2_index.json') || '').length; } catch (e) {}
+            var indexPartial = false;
+            var indexProgress = '';
+            try {
+                var rawIdx = readFile('hiker://files/cache/zyshow2_index.json') || '';
+                if (rawIdx.length > 10) {
+                    indexExists = true;
+                    var idxMeta = JSON.parse(rawIdx);
+                    if (idxMeta && idxMeta.partial) {
+                        indexPartial = true;
+                        indexProgress = idxMeta.progress || '';
+                    }
+                }
+            } catch (e) {}
             var kw = getVar('zys2_kw', '');
 
             // -------- 顶部全局搜索框 (本地索引搜索,onChange 触发刷新) --------
@@ -125,7 +137,7 @@ var rule = {
 
             // -------- 状态横条:Cookie / Index 健康 --------
             var cookieIcon = cookie ? '🟢' : '🔴';
-            var indexIcon = indexExists ? '🟢' : '🔴';
+            var indexIcon = indexExists ? (indexPartial ? '🟡' : '🟢') : '🔴';
             d.push({
                 title: cookieIcon + ' Cookie',
                 url: $('#noLoading#').lazyRule(() => {
@@ -134,7 +146,7 @@ var rule = {
                 col_type: 'scroll_button'
             });
             d.push({
-                title: indexIcon + ' 索引',
+                title: indexIcon + ' 索引' + (indexPartial ? ' ' + indexProgress : ''),
                 url: $('#noLoading#').lazyRule(() => {
                     return 'hiker://page/indexer?rule=' + MY_RULE.title;
                 }),
@@ -489,126 +501,350 @@ var rule = {
         };
 
 
-        // ----- 子页 N: 索引构建器 -----
+        // ----- 子页 N: 索引构建器 (诊断 + 分批) -----
+        // 设计:状态机存 getVar('zys2_idx_state'),phase:
+        //   '' / null  → 入口页 (检测现有索引 + "开始" 按钮)
+        //   'diag'     → 单次诊断 (抓首页 + 1 节目,验证 cookie/header 能过 CF)
+        //   'batch'    → 分批抓集数 (每批 BATCH 个节目,显进度,用户点继续)
+        // 每批走完写一次 partial 索引文件,中途意外退出也保留进度
         var indexerPage = {
             name: '构建索引',
             path: 'indexer',
             col_type: 'movie_3',
             rule: $.toString((CAT_TABS, FULL_HEADERS_JSON, SITE_HOST) => {
+                var BATCH = 5;
+                var FETCH_TIMEOUT = 10000;
+                var CF_RE = /Just a moment|cf-challenge|Turnstile|cdn-cgi\/challenge/i;
+                var IDX_FILE = 'hiker://files/cache/zyshow2_index.json';
+
                 var d = [];
                 (function () {
-                var cookie = getItem('zys2_cookie', '');
-                if (!cookie) {
-                    d.push({title: '⚠ 没有 cookie,请先回首页点 "🔴 Cookie" 过 CF', col_type: 'rich_text'});
-                    return;
-                }
-
-                var hd = JSON.parse(FULL_HEADERS_JSON);
-                hd['Cookie'] = cookie;
-
-                if (typeof setPreResult !== 'undefined') {
-                    setPreResult([
-                        {title: '索引构建中...', col_type: 'rich_text'},
-                        {col_type: 'pic_1_center', extra: {cls: 'loading_gif'},
-                         pic_url: 'https://hikerfans.com/weisyr/img/Loading1.gif'}
-                    ]);
-                }
-
-                // -------- Step 1: 抓首页, 解 dropdown 出全部节目 --------
-                var homeHtml = '';
-                try { homeHtml = fetch(SITE_HOST + '/', {headers: hd}) || ''; } catch (e) {}
-                if (!homeHtml || /Just a moment|cf-challenge/i.test(homeHtml)) {
-                    d.push({title: '首页加载失败或被 CF 拦截 — cookie 可能已失效,请重新过 CF', col_type: 'rich_text'});
-                    return;
-                }
-
-                var dropdowns = homeHtml.match(/<li class="dropdown">[\s\S]*?<\/ul><\/li>/g) || [];
-                var catNameToId = {};
-                CAT_TABS.forEach(t => { catNameToId[t.name] = t.id; });
-
-                var allShows = [];
-                var seenSlug = {};
-                dropdowns.forEach((seg) => {
-                    var catM = seg.match(/<a[^>]*class="dropdown-toggle"[^>]*>\s*([^<\s][^<]*?)\s*<b/);
-                    var catName = catM ? catM[1].trim() : '';
-                    var catId = catNameToId[catName] || '';
-                    if (!catId) return;   // 不在我们 7 大分类的略过
-                    var liRe = /<li>\s*<a[^>]*href="\/([a-zA-Z0-9_]+)\/"[^>]*title="([^"]+)"/g;
-                    var lm;
-                    while ((lm = liRe.exec(seg)) !== null) {
-                        if (seenSlug[lm[1]]) continue;
-                        seenSlug[lm[1]] = 1;
-                        allShows.push({slug: lm[1], name: lm[2], cat: catId, episodes: []});
+                    var cookie = getItem('zys2_cookie', '');
+                    if (!cookie) {
+                        d.push({title: '⚠ 没有 cookie,请先回首页点 "🔴 Cookie" 过 CF', col_type: 'rich_text'});
+                        return;
                     }
-                });
+                    var hd = JSON.parse(FULL_HEADERS_JSON);
+                    hd['Cookie'] = cookie;
 
-                if (allShows.length === 0) {
-                    d.push({title: '首页未解出任何节目 (dropdown 结构变了?)', col_type: 'rich_text'});
-                    return;
-                }
+                    var state = null;
+                    try { state = JSON.parse(getVar('zys2_idx_state', '') || 'null'); } catch (e) {}
 
-                // -------- Step 2: 逐节目 fetch 集数 --------
-                // 海阔规则同步执行,无法显进度条,直接跑完再 setResult
-                // 105 节目 × ~1.5s = 2-3 分钟
-                var failCount = 0;
-                var totalEps = 0;
-                for (var i = 0; i < allShows.length; i++) {
-                    var s = allShows[i];
-                    var url = SITE_HOST + '/' + s.slug + '/';
-                    var html = '';
-                    try { html = fetch(url, {headers: hd}) || ''; } catch (e) { failCount++; continue; }
-                    if (/Just a moment|cf-challenge/i.test(html) || html.length < 200) {
-                        failCount++;
-                        if (failCount > 10) {
-                            // 连续失败,基本 cookie 失效,停止
-                            d.push({title: 'Cookie 中途失效 (失败 ' + failCount + '/' + (i+1) + ' 节目),已停止', col_type: 'rich_text'});
+                    var resetBtn = function () {
+                        d.push({col_type: 'blank_block'});
+                        d.push({
+                            title: '⟲ 重置进度',
+                            url: $('#noLoading#').lazyRule(() => {
+                                putVar({key: 'zys2_idx_state', value: ''});
+                                refreshPage();
+                                return 'hiker://empty';
+                            }),
+                            col_type: 'text_center_1'
+                        });
+                    };
+
+                    // ========== 入口页 ==========
+                    if (!state || !state.phase) {
+                        var hasIdx = false, idxInfo = '';
+                        try {
+                            var raw = readFile(IDX_FILE) || '';
+                            if (raw.length > 10) {
+                                hasIdx = true;
+                                var j = JSON.parse(raw);
+                                var ep = 0;
+                                (j.shows || []).forEach(s => { ep += (s.episodes || []).length; });
+                                idxInfo = (j.shows || []).length + ' 节目 / ' + ep + ' 集, 构建于 ' + (j.builtAt || '?');
+                            }
+                        } catch (e) {}
+
+                        d.push({
+                            title: '📋 索引构建器',
+                            desc: '此页会分两步抓 zyshow.co 的全部节目集数:\n' +
+                                  '  ① 诊断:抓首页 + 1 个节目验证 cookie/header 能过 CF\n' +
+                                  '  ② 分批:每批 ' + BATCH + ' 个节目,显进度+错误,可中途返回\n\n' +
+                                  '现有索引: ' + (hasIdx ? idxInfo : '无'),
+                            col_type: 'rich_text'
+                        });
+                        d.push({
+                            title: hasIdx ? '▶ 开始重建' : '▶ 开始构建',
+                            url: $('#noLoading#').lazyRule(() => {
+                                putVar({key: 'zys2_idx_state', value: JSON.stringify({phase: 'diag'})});
+                                refreshPage();
+                                return 'hiker://empty';
+                            }),
+                            col_type: 'text_center_1'
+                        });
+                        return;
+                    }
+
+                    // ========== 诊断 phase ==========
+                    if (state.phase === 'diag') {
+                        if (typeof setPreResult !== 'undefined') {
+                            setPreResult([
+                                {title: '🔍 诊断中... (抓首页 + 首个节目, ~5s)', col_type: 'rich_text'}
+                            ]);
+                        }
+                        // Step 1: 抓首页
+                        var t0 = new Date().getTime();
+                        var homeHtml = '', homeErr = '';
+                        try { homeHtml = fetch(SITE_HOST + '/', {headers: hd, timeout: FETCH_TIMEOUT}) || ''; }
+                        catch (e) { homeErr = e.message || ('' + e); }
+                        var t1 = new Date().getTime();
+                        var homeLen = (homeHtml || '').length;
+                        var homeCF = CF_RE.test(homeHtml);
+                        var step1ok = !homeErr && homeLen > 1000 && !homeCF;
+
+                        d.push({
+                            title: (step1ok ? '✅' : '❌') + ' Step 1 抓首页 ' + (t1 - t0) + 'ms',
+                            desc: 'URL: ' + SITE_HOST + '/\n' +
+                                  'HTML 长度: ' + homeLen +
+                                  (homeErr ? '\n错误: ' + homeErr : '') +
+                                  (homeCF ? '\n⚠ 命中 CF 拦截标记' : ''),
+                            col_type: 'rich_text'
+                        });
+                        if (!step1ok) {
+                            d.push({
+                                title: '诊断失败 — 首页拉不到',
+                                desc: '可能原因:\n' +
+                                      ' • cookie 已过期 → 回首页重过 CF\n' +
+                                      ' • OkHttp TLS 指纹被 CF 拦(不带 cookie 也会发生)\n' +
+                                      ' • 网络问题(超时 ' + FETCH_TIMEOUT + 'ms)',
+                                col_type: 'rich_text'
+                            });
+                            resetBtn();
                             return;
                         }
-                        continue;
+
+                        // Step 2: 解 dropdown
+                        var dropdowns = homeHtml.match(/<li class="dropdown">[\s\S]*?<\/ul><\/li>/g) || [];
+                        var catNameToId = {};
+                        CAT_TABS.forEach(t => { catNameToId[t.name] = t.id; });
+                        var allShows = [];
+                        var seenSlug = {};
+                        dropdowns.forEach((seg) => {
+                            var catM = seg.match(/<a[^>]*class="dropdown-toggle"[^>]*>\s*([^<\s][^<]*?)\s*<b/);
+                            var catName = catM ? catM[1].trim() : '';
+                            var catId = catNameToId[catName] || '';
+                            if (!catId) return;
+                            var liRe = /<li>\s*<a[^>]*href="\/([a-zA-Z0-9_]+)\/"[^>]*title="([^"]+)"/g;
+                            var lm;
+                            while ((lm = liRe.exec(seg)) !== null) {
+                                if (seenSlug[lm[1]]) continue;
+                                seenSlug[lm[1]] = 1;
+                                allShows.push({slug: lm[1], name: lm[2], cat: catId, episodes: []});
+                            }
+                        });
+                        var step2ok = allShows.length > 0;
+                        d.push({
+                            title: (step2ok ? '✅' : '❌') + ' Step 2 解析节目列表',
+                            desc: 'dropdown 块: ' + dropdowns.length + '\n' +
+                                  '匹配 7 大分类的节目: ' + allShows.length +
+                                  (step2ok ? '\n首个: ' + allShows[0].slug + ' (' + allShows[0].name + ')' : ''),
+                            col_type: 'rich_text'
+                        });
+                        if (!step2ok) {
+                            d.push({title: '诊断失败 — 节目列表解析为空,站结构可能变了', col_type: 'rich_text'});
+                            resetBtn();
+                            return;
+                        }
+
+                        // Step 3: 抓首个节目
+                        var s0 = allShows[0];
+                        var t2 = new Date().getTime();
+                        var showHtml = '', showErr = '';
+                        try { showHtml = fetch(SITE_HOST + '/' + s0.slug + '/', {headers: hd, timeout: FETCH_TIMEOUT}) || ''; }
+                        catch (e) { showErr = e.message || ('' + e); }
+                        var t3 = new Date().getTime();
+                        var showLen = (showHtml || '').length;
+                        var showCF = CF_RE.test(showHtml);
+                        var trCount = (showHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || []).length;
+                        var epLinks = showHtml.match(/\/v\/(\d{8})\.html/g) || [];
+                        var step3ok = !showErr && !showCF && epLinks.length > 0;
+
+                        d.push({
+                            title: (step3ok ? '✅' : '❌') + ' Step 3 抓节目 ' + s0.slug + ' ' + (t3 - t2) + 'ms',
+                            desc: 'HTML 长度: ' + showLen + '\n' +
+                                  '<tr> 数: ' + trCount + '\n' +
+                                  '集数链接(/v/xxxxxxxx.html): ' + epLinks.length +
+                                  (showErr ? '\n错误: ' + showErr : '') +
+                                  (showCF ? '\n⚠ 命中 CF 拦截' : ''),
+                            col_type: 'rich_text'
+                        });
+
+                        if (!step3ok) {
+                            d.push({
+                                title: '诊断失败 — 节目页拉不到',
+                                desc: epLinks.length === 0 && showLen > 500
+                                    ? '页面拿到了但解不出集数,可能正则要更新'
+                                    : '与首页结果不一致,可能是节目页有额外校验',
+                                col_type: 'rich_text'
+                            });
+                            resetBtn();
+                            return;
+                        }
+
+                        // 诊断 OK → 写 batch state
+                        putVar({key: 'zys2_idx_state', value: JSON.stringify({
+                            phase: 'batch',
+                            shows: allShows,
+                            cursor: 0,
+                            fail: 0,
+                            failed: [],
+                            totalEps: 0,
+                            startedAt: new Date().getTime()
+                        })});
+                        d.push({
+                            title: '✅ 诊断通过',
+                            desc: '共 ' + allShows.length + ' 个节目待抓,每批 ' + BATCH +
+                                  ' 个,预计 ' + Math.ceil(allShows.length / BATCH) + ' 次点击',
+                            col_type: 'rich_text'
+                        });
+                        d.push({
+                            title: '▶ 开始批量抓取',
+                            url: $('#noLoading#').lazyRule(() => {
+                                refreshPage();
+                                return 'hiker://empty';
+                            }),
+                            col_type: 'text_center_1'
+                        });
+                        resetBtn();
+                        return;
                     }
-                    failCount = 0;
 
-                    var blocks = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
-                    var seen = {};
-                    blocks.forEach((tr) => {
-                        var dM = tr.match(/\/v\/(\d{8})\.html/);
-                        if (!dM) return;
-                        var date = dM[1];
-                        if (seen[date]) return;
-                        seen[date] = 1;
-                        var tM = tr.match(/<a[^>]*\btitle="([^"]+)"/);
-                        var t = tM ? tM[1] : date;
-                        var tds = tr.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [];
-                        var strip = function (x) { return (x || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); };
-                        var subj = tds.length >= 2 ? strip(tds[1]) : '';
-                        var guests = tds.length >= 3 ? strip(tds[2]) : '';
-                        s.episodes.push({date: date, title: t, subj: subj, guests: guests});
-                        totalEps++;
-                    });
-                }
+                    // ========== 分批 phase ==========
+                    if (state.phase === 'batch') {
+                        if (typeof setPreResult !== 'undefined') {
+                            setPreResult([
+                                {title: '⏳ 抓取中... 本批 ' + state.cursor + '-' +
+                                    Math.min(state.cursor + BATCH - 1, state.shows.length - 1) +
+                                    ' / ' + state.shows.length, col_type: 'rich_text'}
+                            ]);
+                        }
 
-                // -------- Step 3: 写入索引文件 --------
-                var idx = {
-                    version: 1,
-                    builtAt: new Date().toISOString(),
-                    shows: allShows
-                };
-                writeFile('hiker://files/cache/zyshow2_index.json', JSON.stringify(idx));
+                        var shows = state.shows;
+                        var batchStart = state.cursor;
+                        var batchEnd = Math.min(batchStart + BATCH, shows.length);
+                        var batchLog = [];
+                        var batchT0 = new Date().getTime();
 
-                d.push({
-                    title: '✅ 索引构建完成',
-                    desc: allShows.length + ' 个节目 / ' + totalEps + ' 集',
-                    col_type: 'rich_text'
-                });
-                d.push({
-                    title: '回到小程序首页',
-                    url: $('#noLoading#').lazyRule(() => {
-                        back();
-                        refreshPage();
-                        return 'hiker://empty';
-                    }),
-                    col_type: 'text_center_1'
-                });
+                        for (var i = batchStart; i < batchEnd; i++) {
+                            var s = shows[i];
+                            var url = SITE_HOST + '/' + s.slug + '/';
+                            var html = '', err = '';
+                            var fT0 = new Date().getTime();
+                            try { html = fetch(url, {headers: hd, timeout: FETCH_TIMEOUT}) || ''; }
+                            catch (e) { err = e.message || ('' + e); }
+                            var fT1 = new Date().getTime();
+                            var len = (html || '').length;
+                            var cfHit = CF_RE.test(html);
+
+                            if (err || cfHit || len < 200) {
+                                state.fail++;
+                                state.failed.push(s.slug);
+                                batchLog.push('❌ ' + s.slug + ' (' + (fT1 - fT0) + 'ms) ' +
+                                    (err ? err : (cfHit ? 'CF blocked' : 'len=' + len)));
+                                continue;
+                            }
+
+                            var blocks = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
+                            var seen = {};
+                            var epAdded = 0;
+                            blocks.forEach((tr) => {
+                                var dM = tr.match(/\/v\/(\d{8})\.html/);
+                                if (!dM) return;
+                                var date = dM[1];
+                                if (seen[date]) return;
+                                seen[date] = 1;
+                                var tM = tr.match(/<a[^>]*\btitle="([^"]+)"/);
+                                var t = tM ? tM[1] : date;
+                                var tds = tr.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [];
+                                var strip = function (x) {
+                                    return (x || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+                                };
+                                var subj = tds.length >= 2 ? strip(tds[1]) : '';
+                                var guests = tds.length >= 3 ? strip(tds[2]) : '';
+                                s.episodes.push({date: date, title: t, subj: subj, guests: guests});
+                                state.totalEps++;
+                                epAdded++;
+                            });
+                            batchLog.push('✅ ' + s.slug + ' (' + (fT1 - fT0) + 'ms) ' + epAdded + '集');
+                        }
+                        var batchT1 = new Date().getTime();
+
+                        state.cursor = batchEnd;
+                        var done = state.cursor >= shows.length;
+
+                        // 每批写一次 partial 索引,防意外丢
+                        try {
+                            writeFile(IDX_FILE, JSON.stringify({
+                                version: 1,
+                                builtAt: new Date().toISOString(),
+                                partial: !done,
+                                progress: state.cursor + '/' + shows.length,
+                                shows: shows
+                            }));
+                        } catch (e) {}
+
+                        if (done) {
+                            putVar({key: 'zys2_idx_state', value: ''});
+                        } else {
+                            putVar({key: 'zys2_idx_state', value: JSON.stringify(state)});
+                        }
+
+                        var elapsedMs = batchT1 - state.startedAt;
+                        var elapsedS = Math.round(elapsedMs / 1000);
+                        var avgPerShow = state.cursor > 0 ? Math.round(elapsedMs / state.cursor) : 0;
+                        var etaS = done ? 0 : Math.round((shows.length - state.cursor) * avgPerShow / 1000);
+
+                        d.push({
+                            title: done
+                                ? '✅ 索引构建完成'
+                                : '⏳ 进度 ' + state.cursor + ' / ' + shows.length +
+                                  ' (' + Math.round(state.cursor * 100 / shows.length) + '%)',
+                            desc: '累计集数: ' + state.totalEps + '\n' +
+                                  '失败节目: ' + state.fail + (state.fail > 0 ? ' (' + state.failed.slice(-5).join(', ') + (state.failed.length > 5 ? '...' : '') + ')' : '') + '\n' +
+                                  '已耗时: ' + elapsedS + 's' +
+                                  (done ? '' : ' / 剩约 ' + etaS + 's') + '\n' +
+                                  '本批耗时: ' + (batchT1 - batchT0) + 'ms',
+                            col_type: 'rich_text'
+                        });
+                        d.push({
+                            title: '─── 本批结果 (#' + batchStart + '-' + (batchEnd - 1) + ') ───',
+                            desc: batchLog.join('\n') || '(本批无节目)',
+                            col_type: 'rich_text'
+                        });
+
+                        if (!done) {
+                            d.push({
+                                title: '▶ 继续下一批 (剩 ' + (shows.length - state.cursor) + ' 节目)',
+                                url: $('#noLoading#').lazyRule(() => {
+                                    refreshPage();
+                                    return 'hiker://empty';
+                                }),
+                                col_type: 'text_center_1'
+                            });
+                            d.push({
+                                title: '⏸ 暂停 (返回, 进度保留可继续)',
+                                url: $('#noLoading#').lazyRule(() => {
+                                    back();
+                                    return 'hiker://empty';
+                                }),
+                                col_type: 'text_center_1'
+                            });
+                        } else {
+                            d.push({
+                                title: '◀ 回到小程序首页',
+                                url: $('#noLoading#').lazyRule(() => {
+                                    back();
+                                    refreshPage();
+                                    return 'hiker://empty';
+                                }),
+                                col_type: 'text_center_1'
+                            });
+                        }
+                        resetBtn();
+                        return;
+                    }
                 })();
                 setResult(d);
             }, CAT_TABS, FULL_HEADERS_JSON, SITE_HOST)
