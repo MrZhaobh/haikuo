@@ -155,6 +155,19 @@ var rule = {
                 }),
                 col_type: 'scroll_button'
             });
+            d.push({
+                title: '🌐 实时',
+                url: $('#noLoading#').lazyRule(() => {
+                    var p = getVar('zys2_kw_pending', '') || getVar('zys2_kw', '');
+                    if (!p) return 'toast://请先在输入框输入关键字';
+                    putVar({key: 'zys2_kw', value: p});
+                    putVar({key: 'zys2_wv_results', value: ''});
+                    putVar({key: 'zys2_wv_results_kw', value: ''});
+                    putVar({key: 'zys2_wv_dump', value: ''});
+                    return 'hiker://page/wvSearch?rule=' + MY_RULE.title + '&kw=' + encodeURIComponent(p);
+                }),
+                col_type: 'scroll_button'
+            });
             if (kw) {
                 d.push({
                     title: '✖ 清空',
@@ -1004,7 +1017,224 @@ var rule = {
             }, FULL_HEADERS_JSON, SITE_HOST)
         };
 
-        return [getCookiePage, indexerPage, testSearchPage];
+        // 子页 4: WebView 实时搜索 — 真接口 /search.asp 在 OkHttp 上拦死,
+        // 但 x5 WebView 用真浏览器栈, TLS/H2/Client Hints 指纹和 cookie 颁发时一致,
+        // 可以过 CF. JS 轮询 DOM 抽 /v/xxxxxxxx.html 集数链接 + tr 行文本,
+        // putVar 回主页面 + 自身 refreshPage 切到结果展示态.
+        var wvSearchPage = {
+            name: '实时搜索',
+            path: 'wvSearch',
+            col_type: 'movie_3',
+            rule: $.toString((LAZY_CODE, SITE_HOST) => {
+                var d = [];
+                (function () {
+                    var kw = '';
+                    try {
+                        var m = MY_URL.match(/[?&]kw=([^&]*)/);
+                        if (m) kw = decodeURIComponent(m[1]);
+                    } catch (e) {}
+                    if (!kw) kw = getVar('zys2_kw', '');
+                    if (!kw) {
+                        d.push({title: '⚠ 未提供关键字', col_type: 'rich_text'});
+                        d.push({
+                            title: '◀ 返回',
+                            url: $('#noLoading#').lazyRule(() => { back(); return 'hiker://empty'; }),
+                            col_type: 'text_center_1'
+                        });
+                        return;
+                    }
+
+                    var escapeHtml = function (s) {
+                        return ('' + (s || '')).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    };
+
+                    var resJson = getVar('zys2_wv_results', '');
+                    var resKw = getVar('zys2_wv_results_kw', '');
+                    var hasResults = resJson && resKw === kw;
+
+                    d.push({title: '🌐 实时搜索: <b>' + escapeHtml(kw) + '</b>', col_type: 'rich_text'});
+
+                    // ========== 结果态 ==========
+                    if (hasResults) {
+                        var results = [];
+                        try { results = JSON.parse(resJson) || []; } catch (e) {}
+                        var dump = getVar('zys2_wv_dump', '');
+
+                        d.push({
+                            title: '&nbsp;&nbsp;✅ 命中 <b>' + results.length + '</b> 条 (来自真接口 /search.asp,经 x5 WebView)',
+                            col_type: 'rich_text'
+                        });
+                        d.push({col_type: 'blank_block'});
+
+                        results.forEach((r) => {
+                            var href = r.href || '';
+                            var isInfo = !href || href === '#';
+                            if (isInfo) {
+                                d.push({title: r.title || '(信息)', desc: r.desc || '', col_type: 'rich_text'});
+                                return;
+                            }
+                            var url = href;
+                            if (!/^https?:/.test(url)) url = SITE_HOST + (url.indexOf('/') === 0 ? url : '/' + url);
+                            var isEp = /\/v\/\d{8}\.html/.test(url);
+                            d.push({
+                                title: r.title || url,
+                                desc: r.desc || '',
+                                url: isEp ? (url + '@lazyRule=.js:' + LAZY_CODE) : url,
+                                col_type: 'text_1'
+                            });
+                        });
+
+                        if (dump && results.length <= 1) {
+                            d.push({col_type: 'blank_block'});
+                            d.push({title: '🐛 DOM 内容预览 (用于排查没抽到结果的原因):', col_type: 'rich_text'});
+                            d.push({
+                                title: '<font color="#666">' + escapeHtml(dump.substring(0, 1500)) + '</font>',
+                                col_type: 'rich_text'
+                            });
+                        }
+
+                        d.push({col_type: 'blank_block'});
+                        d.push({
+                            title: '🔁 重搜 (重新加载 WebView)',
+                            url: $('#noLoading#').lazyRule(() => {
+                                putVar({key: 'zys2_wv_results', value: ''});
+                                putVar({key: 'zys2_wv_results_kw', value: ''});
+                                putVar({key: 'zys2_wv_dump', value: ''});
+                                refreshPage();
+                                return 'hiker://empty';
+                            }),
+                            col_type: 'text_center_1'
+                        });
+                        d.push({
+                            title: '◀ 返回小程序首页',
+                            url: $('#noLoading#').lazyRule(() => { back(); return 'hiker://empty'; }),
+                            col_type: 'text_center_1'
+                        });
+                        return;
+                    }
+
+                    // ========== 加载态 ==========
+                    d.push({
+                        title: '&nbsp;&nbsp;⏳ WebView 加载 /search.asp 中,自动提取结果...',
+                        col_type: 'rich_text'
+                    });
+                    d.push({
+                        title: '&nbsp;&nbsp;<font color="#666">原理: OkHttp 调 /search.asp 必被 CF 拦, 但 x5 WebView 走真浏览器栈, TLS/HTTP2 指纹与 cookie 颁发时一致, 可放行.</font>',
+                        col_type: 'rich_text'
+                    });
+
+                    d.push({
+                        col_type: 'x5_webview_single',
+                        url: SITE_HOST + '/search.asp?keyword=' + encodeURIComponent(kw),
+                        desc: 'float&&80%',
+                        title: '',
+                        extra: {
+                            canBack: true,
+                            js: $.toString(() => {
+                                var tries = 0;
+                                var maxTries = 60;
+                                function extract() {
+                                    tries++;
+                                    try {
+                                        var bodyLen = ((document.body && document.body.innerHTML) || '').length;
+                                        var titleStr = document.title || '';
+                                        if (/Just a moment/i.test(titleStr) || bodyLen < 3000) {
+                                            if (tries < maxTries) { setTimeout(extract, 800); return; }
+                                            fba.toast('45s 内未通过 CF / 未加载完成');
+                                            return;
+                                        }
+
+                                        var kw = '';
+                                        try {
+                                            var mm = location.search.match(/[?&]keyword=([^&]*)/);
+                                            if (mm) kw = decodeURIComponent(mm[1].replace(/\+/g, ' '));
+                                        } catch (e) {}
+
+                                        var results = [];
+                                        var seen = {};
+
+                                        var anchors = document.querySelectorAll('a[href]');
+                                        for (var i = 0; i < anchors.length; i++) {
+                                            var a = anchors[i];
+                                            var href = a.getAttribute('href') || '';
+                                            if (!/\/v\/\d{8}\.html/.test(href)) continue;
+                                            if (seen[href]) continue;
+                                            seen[href] = 1;
+                                            var title = (a.getAttribute('title') || a.textContent || '').replace(/\s+/g, ' ').trim();
+                                            var tr = null;
+                                            try { tr = a.closest ? a.closest('tr') : null; } catch (e) {}
+                                            if (!tr) {
+                                                var p = a.parentNode;
+                                                for (var k = 0; k < 5 && p; k++) {
+                                                    if (p.tagName && p.tagName.toLowerCase() === 'tr') { tr = p; break; }
+                                                    p = p.parentNode;
+                                                }
+                                            }
+                                            var desc = '';
+                                            if (tr) {
+                                                var tds = tr.querySelectorAll('td');
+                                                var parts = [];
+                                                for (var j = 0; j < tds.length; j++) {
+                                                    var s = (tds[j].textContent || '').replace(/\s+/g, ' ').trim();
+                                                    if (s && s !== title) parts.push(s);
+                                                }
+                                                desc = parts.slice(0, 3).join(' / ').substring(0, 120);
+                                            }
+                                            results.push({href: href, title: title || href, desc: desc});
+                                        }
+
+                                        for (var n = 0; n < anchors.length; n++) {
+                                            var sa = anchors[n];
+                                            var sh = sa.getAttribute('href') || '';
+                                            var sm = sh.match(/^\/([a-zA-Z0-9_]+)\/?$/);
+                                            if (!sm) continue;
+                                            var slug = sm[1];
+                                            if (/^(search|index|admin|api|v|img|css|js|static|home|about|contact)$/i.test(slug)) continue;
+                                            var skey = 'show:' + slug;
+                                            if (seen[skey]) continue;
+                                            var st = (sa.getAttribute('title') || sa.textContent || '').replace(/\s+/g, ' ').trim();
+                                            if (!st || st.length > 30) continue;
+                                            seen[skey] = 1;
+                                            results.push({href: '/' + slug + '/', title: '[节目] ' + st, desc: 'slug=' + slug});
+                                        }
+
+                                        if (results.length === 0) {
+                                            if (tries < maxTries) { setTimeout(extract, 1000); return; }
+                                            var dump = ((document.body.innerText || document.body.textContent) || '').replace(/\s+/g, ' ').substring(0, 2000);
+                                            fba.putVar('zys2_wv_dump', dump);
+                                            fba.putVar('zys2_wv_results', JSON.stringify([
+                                                {href: '#', title: '⚠ 未提取到结果', desc: '可能 search.asp 真返空(该 kw 无匹配), 或站结构变了. 见下方 DOM 预览.'}
+                                            ]));
+                                            fba.putVar('zys2_wv_results_kw', kw);
+                                            fba.parseLazyRule($$$().lazyRule(() => { refreshPage(); }));
+                                            return;
+                                        }
+
+                                        fba.putVar('zys2_wv_results', JSON.stringify(results));
+                                        fba.putVar('zys2_wv_results_kw', kw);
+                                        fba.toast('✅ 抓到 ' + results.length + ' 条结果');
+                                        fba.parseLazyRule($$$().lazyRule(() => { refreshPage(); }));
+                                    } catch (e) {
+                                        try { fba.log('wv search err: ' + e.message); } catch (ee) {}
+                                        if (tries < maxTries) setTimeout(extract, 1000);
+                                    }
+                                }
+                                setTimeout(extract, 1800);
+                            })
+                        }
+                    });
+
+                    d.push({
+                        title: '◀ 取消, 返回',
+                        url: $('#noLoading#').lazyRule(() => { back(); return 'hiker://empty'; }),
+                        col_type: 'text_center_1'
+                    });
+                })();
+                setResult(d);
+            }, LAZY_CODE, SITE_HOST)
+        };
+
+        return [getCookiePage, indexerPage, testSearchPage, wvSearchPage];
     })()
 };
 
