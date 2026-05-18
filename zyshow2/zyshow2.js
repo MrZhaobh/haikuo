@@ -545,35 +545,74 @@ var rule = {
 
                     // ========== 入口页 ==========
                     if (!state || !state.phase) {
-                        var hasIdx = false, idxInfo = '';
+                        var hasIdx = false, idxInfo = '', existingShows = [];
                         try {
                             var raw = readFile(IDX_FILE) || '';
                             if (raw.length > 10) {
                                 hasIdx = true;
                                 var j = JSON.parse(raw);
+                                existingShows = j.shows || [];
                                 var ep = 0;
-                                (j.shows || []).forEach(s => { ep += (s.episodes || []).length; });
-                                idxInfo = (j.shows || []).length + ' 节目 / ' + ep + ' 集, 构建于 ' + (j.builtAt || '?');
+                                existingShows.forEach(s => { ep += (s.episodes || []).length; });
+                                idxInfo = existingShows.length + ' 节目 / ' + ep + ' 集, 构建于 ' + (j.builtAt || '?');
                             }
                         } catch (e) {}
 
-                        d.push({
-                            title: '📋 索引构建器',
-                            desc: '此页会分两步抓 zyshow.co 的全部节目集数:\n' +
-                                  '  ① 诊断:抓首页 + 1 个节目验证 cookie/header 能过 CF\n' +
-                                  '  ② 分批:每批 ' + BATCH + ' 个节目,显进度+错误,可中途返回\n\n' +
-                                  '现有索引: ' + (hasIdx ? idxInfo : '无'),
-                            col_type: 'rich_text'
-                        });
-                        d.push({
-                            title: hasIdx ? '▶ 开始重建' : '▶ 开始构建',
-                            url: $('#noLoading#').lazyRule(() => {
-                                putVar({key: 'zys2_idx_state', value: JSON.stringify({phase: 'diag'})});
-                                refreshPage();
-                                return 'hiker://empty';
-                            }),
-                            col_type: 'text_center_1'
-                        });
+                        d.push({title: '📋 索引构建器', col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;现有索引: <b>' + (hasIdx ? idxInfo : '无') + '</b>', col_type: 'rich_text'});
+
+                        if (hasIdx) {
+                            // 有索引 → 推荐"刷新集数",跳过首页 fetch (CF 对 / 入口严, /<slug>/ 路径松)
+                            d.push({col_type: 'blank_block'});
+                            d.push({title: '✨ 推荐: 仅刷新集数 (不抓首页, 绕开 CF 对 / 入口的拦)', col_type: 'rich_text'});
+                            d.push({
+                                title: '🔄 刷新集数 (基于现有索引)',
+                                url: $('#noLoading#').lazyRule(() => {
+                                    var raw = readFile('hiker://files/cache/zyshow2_index.json') || '';
+                                    var j = {};
+                                    try { j = JSON.parse(raw); } catch (e) {}
+                                    var shows = (j.shows || []).map(s => ({
+                                        slug: s.slug, name: s.name, cat: s.cat, episodes: []
+                                    }));
+                                    putVar({key: 'zys2_idx_state', value: JSON.stringify({
+                                        phase: 'batch',
+                                        shows: shows,
+                                        cursor: 0,
+                                        fail: 0,
+                                        failed: [],
+                                        totalEps: 0,
+                                        startedAt: new Date().getTime(),
+                                        mode: 'refresh'
+                                    })});
+                                    refreshPage();
+                                    return 'hiker://empty';
+                                }),
+                                col_type: 'text_center_1'
+                            });
+                            d.push({col_type: 'blank_block'});
+                            d.push({title: '⚠ 完全重建会先抓首页解节目列表, CF 经常对 / 触发 challenge 而失败', col_type: 'rich_text'});
+                            d.push({
+                                title: '🔁 完全重建 (诊断 + 全抓)',
+                                url: $('#noLoading#').lazyRule(() => {
+                                    putVar({key: 'zys2_idx_state', value: JSON.stringify({phase: 'diag'})});
+                                    refreshPage();
+                                    return 'hiker://empty';
+                                }),
+                                col_type: 'text_center_1'
+                            });
+                        } else {
+                            // 无索引 → 必须走 diag (拿 dropdown)
+                            d.push({title: '&nbsp;&nbsp;首次构建 → 先诊断 (抓首页+1节目), 再分批每 ' + BATCH + ' 节目', col_type: 'rich_text'});
+                            d.push({
+                                title: '▶ 开始构建',
+                                url: $('#noLoading#').lazyRule(() => {
+                                    putVar({key: 'zys2_idx_state', value: JSON.stringify({phase: 'diag'})});
+                                    refreshPage();
+                                    return 'hiker://empty';
+                                }),
+                                col_type: 'text_center_1'
+                            });
+                        }
                         return;
                     }
 
