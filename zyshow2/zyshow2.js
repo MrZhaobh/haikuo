@@ -102,6 +102,14 @@ var rule = {
     }),
 
     // ============ find_rule: 主页面 ============
+    // ⚠ 架构说明 — 为什么用"本地索引"而非"直调真接口":
+    //   zyshow.co 的 CF 按路径细粒度配置:
+    //     / 首页              → ✅ cookie+OkHttp 能拉 (实测 72KB 真 HTML)
+    //     /<slug>/ 节目页      → ✅ 放行
+    //     /search.asp[?...]   → ❌ 单独拦死, 即便带 cf_clearance 也返 5.9KB Just a moment
+    //   实测日期 2026-05-18, 试了 keyword/key/wd/无参四种全部被拦。
+    //   所以"过 cookie + 直调搜索"路径死路, 索引方案是被迫的工程妥协。
+    //   如未来 CF 策略变松, 可访问 hiker://page/testSearch 复测。
     find_rule: $.toString((LAZY_CODE, CAT_TABS, FULL_HEADERS_JSON, SITE_HOST) => {
         var d = [];
         (function () {
@@ -174,13 +182,6 @@ var rule = {
                 title: indexIcon + ' 索引' + (indexPartial ? ' ' + indexProgress : ''),
                 url: $('#noLoading#').lazyRule(() => {
                     return 'hiker://page/indexer?rule=' + MY_RULE.title;
-                }),
-                col_type: 'scroll_button'
-            });
-            d.push({
-                title: '🧪 测真搜索',
-                url: $('#noLoading#').lazyRule(() => {
-                    return 'hiker://page/testSearch?rule=' + MY_RULE.title;
                 }),
                 col_type: 'scroll_button'
             });
