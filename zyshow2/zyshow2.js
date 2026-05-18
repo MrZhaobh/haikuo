@@ -291,7 +291,7 @@ var rule = {
         try { html = fetch(MY_URL, {headers: hd}) || ''; }
         catch (e) { fatalErr = '加载失败: ' + e.message; }
 
-        if (!fatalErr && /Just a moment|cf-challenge/i.test(html)) {
+        if (!fatalErr && /<title[^>]*>\s*Just a moment|Checking your browser before accessing|cf-browser-verification|id=["']cf-error-details["']/i.test(html)) {
             fatalErr = 'Cookie 已失效,请回首页重过 CF';
         }
         if (!fatalErr && (!html || html.length < 200)) {
@@ -514,7 +514,9 @@ var rule = {
             rule: $.toString((CAT_TABS, FULL_HEADERS_JSON, SITE_HOST) => {
                 var BATCH = 5;
                 var FETCH_TIMEOUT = 10000;
-                var CF_RE = /Just a moment|cf-challenge|Turnstile|cdn-cgi\/challenge/i;
+                // 收紧 — 只匹配真 challenge 页特征 (title/body 文案/error id)
+                // 旧版误把 CF 全站注入的 cdn-cgi/challenge-platform 脚本路径判为被拦
+                var CF_RE = /<title[^>]*>\s*Just a moment|Checking your browser before accessing|cf-browser-verification|id=["']cf-error-details["']|Attention Required.*Cloudflare/i;
                 var IDX_FILE = 'hiker://files/cache/zyshow2_index.json';
 
                 var d = [];
