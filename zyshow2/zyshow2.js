@@ -53,7 +53,14 @@ var FULL_HEADERS_JSON = JSON.stringify({
     'Referer': 'https://www.zyshow.co/'
 });
 
-// m3u8 嗅探 lazy (从原 zyshow 沿用,自带 cookie + 完整 header)
+// m3u8 嗅探 lazy — 双线路自动 fallback
+// zyshow.co 单集页有 2 条线路:
+//   line 1: js_videoCon_1 里 eval pack 的 url|<base64>|
+//   line 2: js_videoCon_2 里 <a href="...url=<base64>"> 的 a 标签
+// 每条 hash 跳 /url=<hash> 后 302 到 sc.zyshow.net/ck1/ck.php?url=<m3u8>,
+// ck.php 页里 var urls = "<m3u8>".
+// 经验:有时 line1 死 line2 活, 有时反之. 我们 fetch 各自 m3u8 头 4 字节,
+// 看是否 "#EXT" (m3u8 主清单标志),活的优先返回, 都不活返第一个 + 报警提示.
 var LAZY_CODE =
     "var __r = ''; " +
     "var ck = getItem('" + COOKIE_KEY + "', ''); " +
@@ -61,14 +68,30 @@ var LAZY_CODE =
     "if (ck) hd['Cookie'] = ck; " +
     "var html = ''; try { html = fetch(input, {headers: hd}); } catch(e) { __r = 'hiker://empty##单集页加载失败 ' + e.message; } " +
     "if (!__r) { " +
-    "  var m = html.match(/url\\|([A-Za-z0-9+\\/=]{40,})\\|/); " +
-    "  if (!m) __r = 'hiker://empty##单集页未抓到 base64 hash (可能 cookie 失效)'; " +
+    "  var h1m = html.match(/url\\|([A-Za-z0-9+\\/=]{40,})\\|/); " +
+    "  var h2m = html.match(/href=\"[^\"]*url=([A-Za-z0-9+\\/=]{40,})\"/); " +
+    "  var hashes = []; " +
+    "  if (h1m) hashes.push(h1m[1]); " +
+    "  if (h2m && (!h1m || h2m[1] !== h1m[1])) hashes.push(h2m[1]); " +
+    "  if (hashes.length === 0) __r = 'hiker://empty##单集页未抓到 base64 hash (可能 cookie 失效)'; " +
     "  else { " +
-    "    var jumpUrl = '" + SITE_HOST + "/url=' + m[1]; " +
-    "    var ck2 = ''; try { ck2 = fetch(jumpUrl, {headers: hd}); } catch(e) { __r = 'hiker://empty##跳转失败 ' + e.message; } " +
-    "    if (!__r) { " +
-    "      var m2 = (ck2 || '').match(/urls\\s*=\\s*[\\'\"]([^\\'\"]+)[\\'\"]/); " +
-    "      __r = m2 ? m2[1] + ';{Referer@https://sc.zyshow.net/}' : 'hiker://empty##未抓到 m3u8'; " +
+    "    var resolve = function (h) { " +
+    "      try { var ck2 = fetch('" + SITE_HOST + "/url=' + h, {headers: hd}); " +
+    "        var m2 = (ck2 || '').match(/urls\\s*=\\s*[\\'\"]([^\\'\"]+)[\\'\"]/); " +
+    "        return m2 ? m2[1] : ''; } catch (e) { return ''; } " +
+    "    }; " +
+    "    var isAlive = function (u) { " +
+    "      try { var p = fetch(u, {headers: hd, timeout: 5000}); " +
+    "        return p && /^[\\s\\ufeff]*#EXT/.test(p); } catch (e) { return false; } " +
+    "    }; " +
+    "    var urls = []; " +
+    "    for (var i = 0; i < hashes.length; i++) { var u = resolve(hashes[i]); if (u) urls.push(u); } " +
+    "    if (urls.length === 0) __r = 'hiker://empty##线路 hash 都跳转失败'; " +
+    "    else { " +
+    "      var pick = ''; " +
+    "      for (var j = 0; j < urls.length; j++) { if (isAlive(urls[j])) { pick = urls[j]; break; } } " +
+    "      if (!pick) pick = urls[0]; " +
+    "      __r = pick + ';{Referer@https://sc.zyshow.net/}'; " +
     "    } " +
     "  } " +
     "} " +
