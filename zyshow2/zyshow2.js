@@ -122,18 +122,43 @@ var rule = {
             } catch (e) {}
             var kw = getVar('zys2_kw', '');
 
-            // -------- 顶部全局搜索框 (本地索引搜索,onChange 触发刷新) --------
+            // -------- 顶部全局搜索框 (输入只暂存, 点搜索/回车才触发) --------
+            // 输入框 input 变量是当前框内值; onChange 只 putVar 到临时 key, 不刷页
+            // 搜索按钮读取临时 key, 同步到 zys2_kw 后 refreshPage
             d.push({
                 title: '',
                 desc: indexExists
-                    ? '搜索节目名 / 主题 / 嘉宾 (清空恢复 tab)'
-                    : '搜索 (需先构建索引)',
+                    ? '输入关键字后点 "🔍 搜索" (清空恢复 tab)'
+                    : '输入关键字后点 "🔍 搜索" (需先构建索引)',
                 col_type: 'input',
                 extra: {
                     titleVisible: false,
-                    onChange: 'if(input!==getVar("zys2_kw","")){putVar({key:"zys2_kw",value:input});refreshPage(false)}'
+                    defaultValue: kw,
+                    onChange: 'putVar({key:"zys2_kw_pending",value:input})'
                 }
             });
+            d.push({
+                title: '🔍 搜索',
+                url: $('#noLoading#').lazyRule(() => {
+                    var p = getVar('zys2_kw_pending', '');
+                    putVar({key: 'zys2_kw', value: p});
+                    refreshPage(false);
+                    return 'hiker://empty';
+                }),
+                col_type: 'scroll_button'
+            });
+            if (kw) {
+                d.push({
+                    title: '✖ 清空',
+                    url: $('#noLoading#').lazyRule(() => {
+                        putVar({key: 'zys2_kw', value: ''});
+                        putVar({key: 'zys2_kw_pending', value: ''});
+                        refreshPage(false);
+                        return 'hiker://empty';
+                    }),
+                    col_type: 'scroll_button'
+                });
+            }
 
             // -------- 状态横条:Cookie / Index 健康 --------
             var cookieIcon = cookie ? '🟢' : '🔴';
@@ -153,9 +178,17 @@ var rule = {
                 col_type: 'scroll_button'
             });
             d.push({
+                title: '🧪 测真搜索',
+                url: $('#noLoading#').lazyRule(() => {
+                    return 'hiker://page/testSearch?rule=' + MY_RULE.title;
+                }),
+                col_type: 'scroll_button'
+            });
+            d.push({
                 title: '🔄 刷新',
                 url: $('#noLoading#').lazyRule(() => {
                     putVar({key: 'zys2_kw', value: ''});
+                    putVar({key: 'zys2_kw_pending', value: ''});
                     refreshPage();
                     return 'toast://刷新中';
                 }),
@@ -897,7 +930,80 @@ var rule = {
             }, CAT_TABS, FULL_HEADERS_JSON, SITE_HOST)
         };
 
-        return [getCookiePage, indexerPage];
+        // 子页 3: 测真搜索 — fetch /search.asp 三种参数试通, 显 HTTP 长度/CF/预览
+        var testSearchPage = {
+            name: '测真搜索',
+            path: 'testSearch',
+            col_type: 'movie_3',
+            rule: $.toString((FULL_HEADERS_JSON, SITE_HOST) => {
+                var d = [];
+                (function () {
+                    var cookie = getItem('zys2_cookie', '');
+                    if (!cookie) {
+                        d.push({title: '⚠ 没有 cookie, 请先回首页过 CF', col_type: 'rich_text'});
+                        setResult(d);
+                        return;
+                    }
+                    var hd = JSON.parse(FULL_HEADERS_JSON);
+                    hd['Cookie'] = cookie;
+                    hd['Referer'] = SITE_HOST + '/';
+
+                    var kw = getVar('zys2_kw_pending', '') || getVar('zys2_kw', '') || '蔡康永';
+                    var CF_RE = /<title[^>]*>\s*Just a moment|Checking your browser before accessing|cf-browser-verification|id=["']cf-error-details["']|Attention Required.*Cloudflare/i;
+                    var escapeHtml = function (s) {
+                        return ('' + (s || '')).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    };
+                    var preview = function (s, n) {
+                        return escapeHtml(('' + (s || '')).substring(0, n || 500).replace(/\s+/g, ' '));
+                    };
+
+                    d.push({title: '🧪 测 zyshow.co 真搜索接口', col_type: 'rich_text'});
+                    d.push({title: '&nbsp;&nbsp;关键字: <b>' + escapeHtml(kw) + '</b> (取自上方输入框或最近搜索)', col_type: 'rich_text'});
+                    d.push({title: '&nbsp;&nbsp;Cookie 长度: ' + cookie.length, col_type: 'rich_text'});
+                    d.push({col_type: 'blank_block'});
+
+                    // 试 4 种 URL/方法
+                    var candidates = [
+                        {label: 'GET /search.asp?keyword=', url: SITE_HOST + '/search.asp?keyword=' + encodeURIComponent(kw)},
+                        {label: 'GET /search.asp?key=',     url: SITE_HOST + '/search.asp?key='     + encodeURIComponent(kw)},
+                        {label: 'GET /search.asp?wd=',      url: SITE_HOST + '/search.asp?wd='      + encodeURIComponent(kw)},
+                        {label: 'GET /search.asp (无参)',   url: SITE_HOST + '/search.asp'}
+                    ];
+
+                    candidates.forEach((c) => {
+                        var t0 = new Date().getTime();
+                        var html = '', err = '';
+                        try { html = fetch(c.url, {headers: hd, timeout: 10000}) || ''; }
+                        catch (e) { err = e.message || ('' + e); }
+                        var t1 = new Date().getTime();
+                        var len = (html || '').length;
+                        var cfHit = CF_RE.test(html);
+                        var hasHits = /\/v\/\d{8}\.html|\/[a-zA-Z0-9_]+\/['"]?\s*[^>]*title=/i.test(html);
+                        var status = err ? '❌ 错误' : (cfHit ? '⚠ CF 拦截' : (len < 500 ? '⚠ 内容太短' : (hasHits ? '✅ 看到结果链接' : '🟡 200 但无明显结果')));
+
+                        d.push({title: status + ' ' + c.label, col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;URL: ' + escapeHtml(c.url), col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;耗时: ' + (t1 - t0) + 'ms / 长度: <b>' + len + '</b>', col_type: 'rich_text'});
+                        if (err) d.push({title: '&nbsp;&nbsp;错误: <font color="#d00">' + escapeHtml(err) + '</font>', col_type: 'rich_text'});
+                        if (cfHit) d.push({title: '&nbsp;&nbsp;<font color="#d00">命中 CF challenge 标记</font>', col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;预览: <font color="#666">' + (preview(html, 500) || '<i>(空)</i>') + '</font>', col_type: 'rich_text'});
+                        d.push({col_type: 'blank_block'});
+                    });
+
+                    d.push({
+                        title: '◀ 返回小程序首页',
+                        url: $('#noLoading#').lazyRule(() => {
+                            back();
+                            return 'hiker://empty';
+                        }),
+                        col_type: 'text_center_1'
+                    });
+                })();
+                setResult(d);
+            }, FULL_HEADERS_JSON, SITE_HOST)
+        };
+
+        return [getCookiePage, indexerPage, testSearchPage];
     })()
 };
 
