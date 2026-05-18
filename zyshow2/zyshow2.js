@@ -442,8 +442,8 @@ var rule = {
             rule: $.toString((SITE_HOST) => {
                 var d = [];
                 d.push({
-                    title: '操作说明',
-                    desc: '会自动加载 /search.asp 触发 Cloudflare 5 秒挑战。看到"Just a moment..."请稍候,搜索页出现后自动返回小程序。如果 60s 还卡在 challenge,长按页面手动点 verify 框。',
+                    title: '诊断模式',
+                    desc: '页面顶部会显示绿字浮层 (tries / cookie / userAgentData ...). 看到 "我是真人" 点完之后,如果继续 challenge,请截屏浮层信息给作者,用于定位 x5 内核为什么过不了 Turnstile。',
                     col_type: 'rich_text'
                 });
                 d.push({
@@ -455,43 +455,88 @@ var rule = {
                         canBack: true,
                         ua: 'Mozilla/5.0 (Linux; Android 12; SM-A536U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36',
                         js: $.toString(() => {
-                            // 注入 JS: 轮询 (a) 不是 CF challenge 页 (b) 真实搜索页元素已渲染
-                            //         (c) cookie 含 cf_clearance —— 三者满足即回填并返回
-                            var tries = 0;
+                            // ===== 诊断浮层 =====
+                            // 在 WebView 页面顶部固定一个半透明 div,实时显示:
+                            //   - 当前 title / location.pathname
+                            //   - document.cookie 全文(关键:能不能看到 cf_clearance)
+                            //   - navigator.userAgentData 是否存在(Turnstile 指纹关键)
+                            //   - Turnstile / challenge iframe 数量
+                            //   - JS 检查轮次 / 上次判定
+                            // 用户在 CF 死循环时可以截图给作者看,定位真实原因
+                            function ensurePanel() {
+                                var p = document.getElementById('__zys2_diag');
+                                if (p) return p;
+                                p = document.createElement('div');
+                                p.id = '__zys2_diag';
+                                p.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;'
+                                    + 'background:rgba(0,0,0,0.78);color:#0f0;font:11px/1.35 monospace;'
+                                    + 'padding:6px 8px;max-height:42vh;overflow:auto;white-space:pre-wrap;'
+                                    + 'word-break:break-all;border-bottom:2px solid #0f0;';
+                                (document.body || document.documentElement).appendChild(p);
+                                return p;
+                            }
+                            function diag(state) {
+                                try {
+                                    var p = ensurePanel();
+                                    var lines = [];
+                                    lines.push('[zys2 diag tries=' + state.tries + ']');
+                                    lines.push('URL: ' + location.pathname + location.search);
+                                    lines.push('TITLE: ' + (document.title || ''));
+                                    lines.push('isChallenge=' + state.isChallenge + ' hasReal=' + state.hasReal);
+                                    lines.push('cfIframe=' + state.cfIframe + ' chForm=' + state.chForm);
+                                    var uad = navigator.userAgentData;
+                                    lines.push('userAgentData: ' + (uad ? ('mobile=' + uad.mobile + ' platform=' + uad.platform) : 'undefined'));
+                                    var ck = '';
+                                    try { ck = document.cookie || ''; } catch(e) { ck = '<err:' + e.message + '>'; }
+                                    lines.push('document.cookie: ' + (ck.length ? ck : '<empty>'));
+                                    try {
+                                        var ck2 = fba.getCookie(location.href) || '';
+                                        lines.push('fba.getCookie:  ' + (ck2.length ? ck2 : '<empty>'));
+                                    } catch(e) { lines.push('fba.getCookie ERR: ' + e.message); }
+                                    lines.push('last: ' + (state.last || ''));
+                                    p.textContent = lines.join('\n');
+                                } catch (e) { /* ignore */ }
+                            }
+                            var tries = 0, lastNote = '';
                             function check() {
                                 tries++;
+                                var state = { tries: tries, last: lastNote };
                                 try {
                                     var title = (document.title || '').toLowerCase();
-                                    var isChallenge = title.indexOf('just a moment') >= 0 ||
-                                                      title.indexOf('attention required') >= 0 ||
-                                                      document.querySelector('#challenge-form') ||
-                                                      document.querySelector('iframe[src*="challenges.cloudflare.com"]');
-                                    var hasReal = document.querySelector('.dropdown-menu') ||
-                                                  document.querySelector('input[type=search]') ||
-                                                  document.querySelector('input[name="q"]') ||
-                                                  document.querySelector('form[action*="search"]');
-                                    if (!isChallenge && hasReal) {
-                                        var c = fba.getCookie(location.href);
-                                        // cf_clearance 是 CF challenge 通过后才有的关键 cookie
+                                    state.chForm = !!document.querySelector('#challenge-form');
+                                    state.cfIframe = document.querySelectorAll('iframe[src*="challenges.cloudflare.com"]').length;
+                                    state.isChallenge = title.indexOf('just a moment') >= 0
+                                                      || title.indexOf('attention required') >= 0
+                                                      || state.chForm
+                                                      || state.cfIframe > 0;
+                                    state.hasReal = !!(document.querySelector('.dropdown-menu')
+                                                    || document.querySelector('input[type=search]')
+                                                    || document.querySelector('input[name="q"]')
+                                                    || document.querySelector('form[action*="search"]'));
+                                    var c = '';
+                                    try { c = fba.getCookie(location.href) || document.cookie || ''; } catch(e) {}
+                                    if (!state.isChallenge && state.hasReal) {
                                         if (c && c.indexOf('cf_clearance') >= 0) {
+                                            lastNote = 'GOT cf_clearance @ try=' + tries;
+                                            state.last = lastNote; diag(state);
                                             fba.putVar('zys2_ck_from_wv', c);
-                                            fba.toast('✅ 已抓取 cf_clearance,正在返回');
-                                            fba.parseLazyRule($$$().lazyRule(() => { back(); }));
-                                            return;
-                                        } else if (c && c.length > 20 && tries > 30) {
-                                            // CF 在某些机型上 challenge 不出 cf_clearance,而是别的 cookie
-                                            // 拿到 15s 后还没 cf_clearance 但有 cookie,fallback 保存
-                                            fba.putVar('zys2_ck_from_wv', c);
-                                            fba.toast('⚠ 未见 cf_clearance,保存当前 cookie 试试');
+                                            fba.toast('✅ 抓到 cf_clearance,返回中');
                                             fba.parseLazyRule($$$().lazyRule(() => { back(); }));
                                             return;
                                         }
+                                        lastNote = 'real-page-no-cfclr try=' + tries;
+                                    } else if (state.isChallenge) {
+                                        lastNote = 'still-challenge try=' + tries;
+                                    } else {
+                                        lastNote = 'transition try=' + tries;
                                     }
-                                } catch (e) { try { fba.log('zys2 check: ' + e.message); } catch(ee) {} }
+                                } catch (e) { lastNote = 'ERR: ' + e.message; }
+                                state.last = lastNote;
+                                diag(state);
                                 if (tries < 240) setTimeout(check, 500);
-                                else fba.toast('60s 内未过 CF,请手动操作 verify 框');
+                                else { try { fba.toast('120s 内未过 CF,截图浮层信息给作者'); } catch(e) {} }
                             }
-                            setTimeout(check, 2000);  // 先等 CF 自动 challenge 跑一会
+                            setTimeout(check, 1500);
                         })
                     }
                 });
