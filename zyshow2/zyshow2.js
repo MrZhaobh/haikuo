@@ -593,24 +593,25 @@ var rule = {
                         var homeLen = (homeHtml || '').length;
                         var homeCF = CF_RE.test(homeHtml);
                         var step1ok = !homeErr && homeLen > 1000 && !homeCF;
+                        var escapeHtml = function (s) {
+                            return ('' + (s || '')).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        };
+                        var preview = function (s) {
+                            return escapeHtml(('' + (s || '')).substring(0, 300).replace(/\s+/g, ' '));
+                        };
 
-                        d.push({
-                            title: (step1ok ? '✅' : '❌') + ' Step 1 抓首页 ' + (t1 - t0) + 'ms',
-                            desc: 'URL: ' + SITE_HOST + '/\n' +
-                                  'HTML 长度: ' + homeLen +
-                                  (homeErr ? '\n错误: ' + homeErr : '') +
-                                  (homeCF ? '\n⚠ 命中 CF 拦截标记' : ''),
-                            col_type: 'rich_text'
-                        });
+                        d.push({title: (step1ok ? '✅' : '❌') + ' Step 1 抓首页', col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;耗时: ' + (t1 - t0) + 'ms', col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;HTML 长度: <b>' + homeLen + '</b>', col_type: 'rich_text'});
+                        if (homeErr) d.push({title: '&nbsp;&nbsp;错误: <font color="#d00">' + escapeHtml(homeErr) + '</font>', col_type: 'rich_text'});
+                        if (homeCF) d.push({title: '&nbsp;&nbsp;⚠ <font color="#d00">命中 CF 拦截标记</font>', col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;预览(前 300 字): <font color="#666">' + (preview(homeHtml) || '<i>(空)</i>') + '</font>', col_type: 'rich_text'});
                         if (!step1ok) {
-                            d.push({
-                                title: '诊断失败 — 首页拉不到',
-                                desc: '可能原因:\n' +
-                                      ' • cookie 已过期 → 回首页重过 CF\n' +
-                                      ' • OkHttp TLS 指纹被 CF 拦(不带 cookie 也会发生)\n' +
-                                      ' • 网络问题(超时 ' + FETCH_TIMEOUT + 'ms)',
-                                col_type: 'rich_text'
-                            });
+                            d.push({title: '❌ 诊断失败 — 首页拉不到', col_type: 'rich_text'});
+                            d.push({title: '&nbsp;&nbsp;可能原因:', col_type: 'rich_text'});
+                            d.push({title: '&nbsp;&nbsp;• cookie 已过期 → 回首页重过 CF', col_type: 'rich_text'});
+                            d.push({title: '&nbsp;&nbsp;• OkHttp TLS 指纹被 CF 拦(不带 cookie 也会发生)', col_type: 'rich_text'});
+                            d.push({title: '&nbsp;&nbsp;• 网络/超时 (' + FETCH_TIMEOUT + 'ms)', col_type: 'rich_text'});
                             resetBtn();
                             return;
                         }
@@ -635,15 +636,12 @@ var rule = {
                             }
                         });
                         var step2ok = allShows.length > 0;
-                        d.push({
-                            title: (step2ok ? '✅' : '❌') + ' Step 2 解析节目列表',
-                            desc: 'dropdown 块: ' + dropdowns.length + '\n' +
-                                  '匹配 7 大分类的节目: ' + allShows.length +
-                                  (step2ok ? '\n首个: ' + allShows[0].slug + ' (' + allShows[0].name + ')' : ''),
-                            col_type: 'rich_text'
-                        });
+                        d.push({title: (step2ok ? '✅' : '❌') + ' Step 2 解析节目列表', col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;dropdown 块: ' + dropdowns.length, col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;匹配 7 大分类的节目: <b>' + allShows.length + '</b>', col_type: 'rich_text'});
+                        if (step2ok) d.push({title: '&nbsp;&nbsp;首个: ' + allShows[0].slug + ' (' + escapeHtml(allShows[0].name) + ')', col_type: 'rich_text'});
                         if (!step2ok) {
-                            d.push({title: '诊断失败 — 节目列表解析为空,站结构可能变了', col_type: 'rich_text'});
+                            d.push({title: '❌ 诊断失败 — 节目列表解析为空,站结构可能变了', col_type: 'rich_text'});
                             resetBtn();
                             return;
                         }
@@ -661,22 +659,23 @@ var rule = {
                         var epLinks = showHtml.match(/\/v\/(\d{8})\.html/g) || [];
                         var step3ok = !showErr && !showCF && epLinks.length > 0;
 
-                        d.push({
-                            title: (step3ok ? '✅' : '❌') + ' Step 3 抓节目 ' + s0.slug + ' ' + (t3 - t2) + 'ms',
-                            desc: 'HTML 长度: ' + showLen + '\n' +
-                                  '<tr> 数: ' + trCount + '\n' +
-                                  '集数链接(/v/xxxxxxxx.html): ' + epLinks.length +
-                                  (showErr ? '\n错误: ' + showErr : '') +
-                                  (showCF ? '\n⚠ 命中 CF 拦截' : ''),
-                            col_type: 'rich_text'
-                        });
+                        d.push({title: (step3ok ? '✅' : '❌') + ' Step 3 抓节目 ' + s0.slug, col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;耗时: ' + (t3 - t2) + 'ms', col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;HTML 长度: <b>' + showLen + '</b>', col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;&lt;tr&gt; 数: ' + trCount, col_type: 'rich_text'});
+                        d.push({title: '&nbsp;&nbsp;集数链接(/v/xxxxxxxx.html): <b>' + epLinks.length + '</b>', col_type: 'rich_text'});
+                        if (showErr) d.push({title: '&nbsp;&nbsp;错误: <font color="#d00">' + escapeHtml(showErr) + '</font>', col_type: 'rich_text'});
+                        if (showCF) d.push({title: '&nbsp;&nbsp;⚠ <font color="#d00">命中 CF 拦截</font>', col_type: 'rich_text'});
+                        if (showLen > 0 && showLen < 2000) {
+                            d.push({title: '&nbsp;&nbsp;预览: <font color="#666">' + preview(showHtml) + '</font>', col_type: 'rich_text'});
+                        }
 
                         if (!step3ok) {
+                            d.push({title: '❌ 诊断失败 — 节目页拉不到', col_type: 'rich_text'});
                             d.push({
-                                title: '诊断失败 — 节目页拉不到',
-                                desc: epLinks.length === 0 && showLen > 500
+                                title: '&nbsp;&nbsp;' + (epLinks.length === 0 && showLen > 500
                                     ? '页面拿到了但解不出集数,可能正则要更新'
-                                    : '与首页结果不一致,可能是节目页有额外校验',
+                                    : '与首页结果不一致,可能是节目页有额外校验'),
                                 col_type: 'rich_text'
                             });
                             resetBtn();
@@ -799,20 +798,27 @@ var rule = {
                         d.push({
                             title: done
                                 ? '✅ 索引构建完成'
-                                : '⏳ 进度 ' + state.cursor + ' / ' + shows.length +
-                                  ' (' + Math.round(state.cursor * 100 / shows.length) + '%)',
-                            desc: '累计集数: ' + state.totalEps + '\n' +
-                                  '失败节目: ' + state.fail + (state.fail > 0 ? ' (' + state.failed.slice(-5).join(', ') + (state.failed.length > 5 ? '...' : '') + ')' : '') + '\n' +
-                                  '已耗时: ' + elapsedS + 's' +
-                                  (done ? '' : ' / 剩约 ' + etaS + 's') + '\n' +
-                                  '本批耗时: ' + (batchT1 - batchT0) + 'ms',
+                                : '⏳ 进度 <b>' + state.cursor + ' / ' + shows.length + '</b> (' + Math.round(state.cursor * 100 / shows.length) + '%)',
+                            col_type: 'rich_text'
+                        });
+                        d.push({title: '&nbsp;&nbsp;累计集数: <b>' + state.totalEps + '</b>', col_type: 'rich_text'});
+                        d.push({
+                            title: '&nbsp;&nbsp;失败节目: ' + state.fail +
+                                (state.fail > 0 ? ' <font color="#d00">(' + state.failed.slice(-5).join(', ') + (state.failed.length > 5 ? '...' : '') + ')</font>' : ''),
                             col_type: 'rich_text'
                         });
                         d.push({
-                            title: '─── 本批结果 (#' + batchStart + '-' + (batchEnd - 1) + ') ───',
-                            desc: batchLog.join('\n') || '(本批无节目)',
+                            title: '&nbsp;&nbsp;已耗时: ' + elapsedS + 's' + (done ? '' : ' / 剩约 ' + etaS + 's') + ' / 本批 ' + (batchT1 - batchT0) + 'ms',
                             col_type: 'rich_text'
                         });
+                        d.push({title: '─── 本批 (#' + batchStart + '-' + (batchEnd - 1) + ') ───', col_type: 'rich_text'});
+                        if (batchLog.length === 0) {
+                            d.push({title: '&nbsp;&nbsp;(本批无节目)', col_type: 'rich_text'});
+                        } else {
+                            batchLog.forEach((l) => {
+                                d.push({title: '&nbsp;&nbsp;' + l, col_type: 'rich_text'});
+                            });
+                        }
 
                         if (!done) {
                             d.push({
