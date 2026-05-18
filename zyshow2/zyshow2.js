@@ -150,6 +150,9 @@ var rule = {
                 url: $('#noLoading#').lazyRule(() => {
                     var p = getVar('zys2_kw_pending', '');
                     putVar({key: 'zys2_kw', value: p});
+                    // 切到本地搜索时清掉实时结果, 否则同 kw 总命中实时分支
+                    putVar({key: 'zys2_wv_results', value: ''});
+                    putVar({key: 'zys2_wv_results_kw', value: ''});
                     refreshPage(false);
                     return 'hiker://empty';
                 }),
@@ -174,6 +177,8 @@ var rule = {
                     url: $('#noLoading#').lazyRule(() => {
                         putVar({key: 'zys2_kw', value: ''});
                         putVar({key: 'zys2_kw_pending', value: ''});
+                        putVar({key: 'zys2_wv_results', value: ''});
+                        putVar({key: 'zys2_wv_results_kw', value: ''});
                         refreshPage(false);
                         return 'hiker://empty';
                     }),
@@ -240,6 +245,36 @@ var rule = {
 
             // -------- 关键字搜索模式 (覆盖 tab 网格) --------
             if (kw) {
+                // 优先看实时(WebView)结果, 没有再走本地索引
+                var wvJson = getVar('zys2_wv_results', '');
+                var wvKw = getVar('zys2_wv_results_kw', '');
+                var wvResults = [];
+                if (wvJson && wvKw === kw) {
+                    try { wvResults = JSON.parse(wvJson) || []; } catch (e) {}
+                }
+                if (wvResults.length > 0) {
+                    d.push({title: '🌐 "' + kw + '" · 实时搜索 · ' + wvResults.length + ' 条', col_type: 'rich_text'});
+                    d.push({title: '&nbsp;&nbsp;<font color="#888">来源: WebView 走真接口 /search.asp. 点 "🔍 搜索" 切回本地索引</font>', col_type: 'rich_text'});
+                    d.push({col_type: 'blank_block'});
+                    wvResults.forEach((r) => {
+                        var href = r.href || '';
+                        if (!href || href === '#') {
+                            d.push({title: r.title || '(信息)', desc: r.desc || '', col_type: 'rich_text'});
+                            return;
+                        }
+                        var url = href;
+                        if (!/^https?:/.test(url)) url = SITE_HOST + (url.indexOf('/') === 0 ? url : '/' + url);
+                        var isEp = /\/v\/\d{8}\.html/.test(url);
+                        d.push({
+                            title: r.title || url,
+                            desc: r.desc || '',
+                            url: isEp ? (url + '@lazyRule=.js:' + LAZY_CODE) : url,
+                            col_type: 'text_1'
+                        });
+                    });
+                    return;
+                }
+
                 var kwLower = kw.toLowerCase();
                 var nameHits = [], epHits = [];
                 (idx.shows || []).forEach((s) => {
@@ -1202,18 +1237,19 @@ var rule = {
                                             if (tries < maxTries) { setTimeout(extract, 1000); return; }
                                             var dump = ((document.body.innerText || document.body.textContent) || '').replace(/\s+/g, ' ').substring(0, 2000);
                                             fba.putVar('zys2_wv_dump', dump);
-                                            fba.putVar('zys2_wv_results', JSON.stringify([
-                                                {href: '#', title: '⚠ 未提取到结果', desc: '可能 search.asp 真返空(该 kw 无匹配), 或站结构变了. 见下方 DOM 预览.'}
-                                            ]));
+                                            // 失败 → 写空数组, 留在子页让用户看 dump 排查
+                                            fba.putVar('zys2_wv_results', '[]');
                                             fba.putVar('zys2_wv_results_kw', kw);
+                                            fba.toast('⚠ 未抽到结果, 见 DOM 预览');
                                             fba.parseLazyRule($$$().lazyRule(() => { refreshPage(); }));
                                             return;
                                         }
 
                                         fba.putVar('zys2_wv_results', JSON.stringify(results));
                                         fba.putVar('zys2_wv_results_kw', kw);
-                                        fba.toast('✅ 抓到 ' + results.length + ' 条结果');
-                                        fba.parseLazyRule($$$().lazyRule(() => { refreshPage(); }));
+                                        fba.toast('✅ 抓到 ' + results.length + ' 条, 返回主页');
+                                        // 成功 → back 到 find_rule + refresh, 主页直接渲染卡片
+                                        fba.parseLazyRule($$$().lazyRule(() => { back(); refreshPage(); }));
                                     } catch (e) {
                                         try { fba.log('wv search err: ' + e.message); } catch (ee) {}
                                         if (tries < maxTries) setTimeout(extract, 1000);
