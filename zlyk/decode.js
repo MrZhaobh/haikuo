@@ -31,6 +31,15 @@ try {
 }
 
 // ============================
+// 原作者 typo 修正: find_rule 里定义的是 `分类标领`,
+// 但 dt 子页用的是 `分类标题`, 跑起来报 ReferenceError(JSEngine#36 行 35)
+// ============================
+if (rule.find_rule && /分类标领/.test(rule.find_rule)) {
+    rule.find_rule = rule.find_rule.replace(/分类标领/g, '分类标题');
+    console.log('  ✓ find_rule typo: 分类标领 → 分类标题');
+}
+
+// ============================
 // 后处理: 把 er 子页里 eval('hiker://page/erji?rule=模板·Q') 这一行
 // 替换成内联的"二级播放页"实现, 去掉对海阔内置 模板·Q 的依赖
 //
