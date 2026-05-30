@@ -20,6 +20,7 @@ const SITES = [
     { name: 'zyshow',    file: 'zyshow/clipboard.json' },   // 综艺巴士 全站台综 35 节目 (zyshow.co)
     { name: 'zyshow2',   file: 'zyshow2/clipboard.json' },  // 综艺巴士 深搜索版 (WebView 抓 CF cookie + 全节目索引缓存)
     { name: 'zyshow3',   file: 'zyshow3/clipboard.json' },  // 综艺巴士 标准搜索 + WebView 抽 DOM (memory: /search.asp OkHttp 拦死)
+    { name: 'zlyk',      file: 'zlyk/clipboard.json' },     // 周六影库 1 (zlykw.com) — 评论区复制侠分享的云口令解码
 ];
 
 // 订阅源里所有规则统一分组 (各站源数据 group 不变, 仅在聚合输出里覆盖)

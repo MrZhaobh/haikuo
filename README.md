@@ -21,6 +21,7 @@ https://raw.githubusercontent.com/MrZhaobh/haikuo/main/clipboard.json
 | zyshow | [zyshow/](zyshow/) | https://www.zyshow.co | 综艺巴士 — 台湾综艺 35 节目全站(11点热炒店 / 综艺大热门 / 小姐不熙娣 …) |
 | zyshow2 | [zyshow2/](zyshow2/) | https://www.zyshow.co | 综艺巴士 深搜索测试版 — WebView 抓 CF cookie + 全节目索引,可搜嘉宾/主题(与 zyshow 并行) |
 | zyshow3 | [zyshow3/](zyshow3/) | https://www.zyshow.co | 综艺巴士 标准搜索 + WebView 版 — 主页搜索框 → `hiker://search` → search_find_rule 内 push x5 WebView 抽 DOM 回填(与 zyshow/zyshow2 并行) |
+| zlyk | [zlyk/](zlyk/) | https://www.zlykw.com | 周六影库 1 — 综合影视聚合(评论区复制侠分享云口令 `云6oooole/.../jcxgrj362a2fjrqn` 解码) |
 
 每个站点目录下都有自己的 `README.md`、`compile.js` (或 `decode.js`)、`clipboard.json` 与各类口令文件。
 
@@ -38,7 +39,8 @@ sugo/
 ├── zyshow11/
 ├── zyshow/
 ├── zyshow2/
-└── zyshow3/
+├── zyshow3/
+└── zlyk/
 ```
 
 ## 添加新站点
@@ -68,6 +70,7 @@ node zyshow11/compile.js
 node zyshow/compile.js
 node zyshow2/compile.js
 node zyshow3/compile.js
+node zlyk/decode.js
 # (mtyy 由 SQLite 备份脚本生成,见 mtyy/README.md)
 
 # 聚合到根 clipboard.json
