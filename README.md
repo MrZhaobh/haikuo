@@ -20,7 +20,7 @@ https://raw.githubusercontent.com/MrZhaobh/haikuo/main/clipboard.json
 | zyshow11 | [zyshow11/](zyshow11/) | https://www.zyshow.co/11dianrechaodian/ | 台湾 TVBS 综艺《11点热炒店》单节目滚动归档 |
 | zyshow | [zyshow/](zyshow/) | https://www.zyshow.co | 综艺巴士 — 台湾综艺 35 节目全站(11点热炒店 / 综艺大热门 / 小姐不熙娣 …) |
 | zyshow2 | [zyshow2/](zyshow2/) | https://www.zyshow.co | 综艺巴士 深搜索测试版 — WebView 抓 CF cookie + 全节目索引,可搜嘉宾/主题(与 zyshow 并行) |
-| zlyk | [zlyk/](zlyk/) | https://www.zlykw.com | 周六影库 1 — 综合影视聚合(评论区复制侠分享云口令 `云6oooole/.../jcxgrj362a2fjrqn` 解码) |
+| zlyk | [zlyk/](zlyk/) | https://www.zlykw.com | 周六影库 — 综合影视聚合(评论区复制侠分享云口令 `云6oooole/.../jcxgrj362a2fjrqn` 解码, decode.js 后处理 typo / const→var / 模板·Q 内联 / search_url &amp;→& / 广告 li 过滤 / er 线路-选集 截断对齐) |
 
 每个站点目录下都有自己的 `README.md`、`compile.js` (或 `decode.js`)、`clipboard.json` 与各类口令文件。
 

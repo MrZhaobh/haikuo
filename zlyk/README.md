@@ -1,4 +1,6 @@
-# 周六影库 1 (zlykw.com)
+# 周六影库 (zlykw.com)
+
+> title 在 decode.js 里从原作者的"周六影库 1"重命名为"周六影库"。原始 token-quick-original.txt 不动。
 
 来源: 海阔视界群组 05-18 回复, 评论区复制侠分享的小程序 `云6oooole/xxxxxx/jcxgrj362a2fjrqn`。
 本目录为该口令解出的明文规则 + 7 件套, 接入到仓库根 `clipboard.json` 聚合订阅。

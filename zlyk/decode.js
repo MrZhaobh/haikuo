@@ -40,6 +40,35 @@ if (rule.find_rule && /分类标领/.test(rule.find_rule)) {
 }
 
 // ============================
+// title: "周六影库 1" → "周六影库" (用户偏好)
+// ============================
+if (rule.title === '周六影库 1') {
+    rule.title = '周六影库';
+    console.log('  ✓ title: 周六影库 1 → 周六影库');
+}
+
+// ============================
+// search_url: 去掉 HTML entity `&amp;` (海阔传 URL 时不会转义, OkHttp 把 ?wd=xxx&amp;submit= 当怪 URL)
+// 错误现象: ArticleListModel HttpRequestError 'Expected URL scheme http/https but was error'
+// ============================
+if (rule.search_url && /&amp;/.test(rule.search_url)) {
+    rule.search_url = rule.search_url.replace(/&amp;/g, '&');
+    console.log('  ✓ search_url: 去掉 &amp; HTML entity');
+}
+
+// ============================
+// searchFind: 过滤广告 li (href="#" 的"邀你领红包"占位)
+// 否则首条结果会拼成 https://www.zlykw.com/# 然后点开跳不到 er
+// ============================
+if (rule.searchFind && /\.stui-vodlist&&li/.test(rule.searchFind) && !/href.*===.*['"]#['"]/.test(rule.searchFind)) {
+    rule.searchFind = rule.searchFind.replace(
+        /var link = pd\(list\[j\], 'a&&href'\);/,
+        "var link = pd(list[j], 'a&&href');\n    if (!link || link === '#' || link.indexOf('#') === link.length - 1) continue;  // 跳广告占位"
+    );
+    console.log('  ✓ searchFind: 加广告 li 过滤');
+}
+
+// ============================
 // 硬化: find_rule 里那些 `const 中文名 = ...` 改成 `var`,
 // 因为 dt 子页是 `eval(JSON.parse(request('hiker://page/dt')).rule)` 注入进来的,
 // 海阔 JSEngine (Rhino 派) 对 ES6 `const`/`let` 在 eval 跨边界时有时
@@ -73,10 +102,12 @@ if (rule.find_rule) {
 // ============================
 const INLINE_ERJI_TEMPLATE = [
     "var __lineKey = MY_RULE.title + '_line';",
-    "var __lineIdx = parseInt(getVar(__lineKey, '0')) || 0;",
     "var __lines = pdfa(html, 线路) || [];",
     "var __groups = pdfa(html, 选集) || [];",
-    "if (__lineIdx >= __lines.length) __lineIdx = 0;",
+    // pannel__head 可能比 playlist 多 (猜你喜欢 / 相关推荐 也会用 pannel__head), 截到对齐
+    "if (__lines.length > __groups.length) __lines = __lines.slice(0, __groups.length);",
+    "var __lineIdx = parseInt(getVar(__lineKey, '0')) || 0;",
+    "if (__lineIdx >= __groups.length) __lineIdx = 0;",
     "if (__lines.length > 1) {",
     "  __lines.forEach(function (ln, i) {",
     "    var tn = pdfh(ln, 线路名) || ('线路' + (i + 1));",
