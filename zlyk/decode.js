@@ -48,22 +48,19 @@ if (rule.title === '周六影库 1') {
 }
 
 // ============================
-// search_url 净化:
-//   1. 去掉 HTML entity `&amp;`
-//   2. 去掉末尾空值 query (`&submit=` 是 maccms form submit 按钮残留, 服务端无关紧要,
-//      但海阔 v2 搜索预渲染时这种 `?wd=**&submit=` 格式偶发 OkHttp 解析失败返 'error://')
-// 错误现象: ArticleListModel HttpRequestError 'Expected URL scheme http/https but was error'
+// search_url: 改成 maccms 标准 path 形式 `vodsearch/**----------fypage---.html`
+// 原作者用的 query 形式 `?wd=**&submit=` 海阔 v2 schema 预渲染时报
+//   ArticleListModel HttpRequestError 'Expected URL scheme http/https but was error'
+// 同款 maccms 主题的麦田 (mtyy5.cc) 用的就是 path 形式, 实测 zlykw.com 也支持
+// (curl `vodsearch/<kw>----------1---.html` 返 200 + 9 结果含"四季情第一季")
 // ============================
-if (rule.search_url) {
+if (rule.search_url && /vodsearch\/-+\.html\?wd=\*\*/.test(rule.search_url)) {
     const orig = rule.search_url;
-    rule.search_url = rule.search_url
-        .replace(/&amp;/g, '&')        // HTML entity
-        .replace(/&submit=$/, '')      // 末尾空值
-        .replace(/&[^=]+=&/g, '&')     // 中间空值
-        .replace(/\?&/, '?');          // ? 后跟 & 的情形
-    if (rule.search_url !== orig) {
-        console.log('  ✓ search_url:', JSON.stringify(orig), '→', JSON.stringify(rule.search_url));
-    }
+    rule.search_url = 'https://www.zlykw.com/vodsearch/**----------fypage---.html';
+    console.log('  ✓ search_url:', JSON.stringify(orig), '→', JSON.stringify(rule.search_url));
+} else if (rule.search_url && /&amp;/.test(rule.search_url)) {
+    rule.search_url = rule.search_url.replace(/&amp;/g, '&');
+    console.log('  ✓ search_url: 去掉 &amp; HTML entity');
 }
 
 // ============================
