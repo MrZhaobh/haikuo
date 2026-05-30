@@ -94,8 +94,11 @@ var rule = {
     col_type: 'movie_3',
     class_name: '',
     class_url: '',
-    // 走海阔标准搜索: 主页搜索按钮把关键字塞进 hiker://search 路径, 命中 search_find_rule
-    searchUrl: SITE_HOST + '/search.asp?keyword=**',
+    // searchUrl 故意指 hiker://empty: 海阔标准搜索路径会自动 fetch search_url,
+    // 但 zyshow.co 的 /search.asp 即使带 cf_clearance OkHttp 也拦死(返 5.9KB Just a moment),
+    // 所以不能让海阔走 OkHttp; search_find_rule 内部用 x5 WebView 抽 DOM 替代。
+    // 关键字通过 MY_URL.split('key=') 提取。
+    searchUrl: 'hiker://empty?key=**',
     timeout: 20000,
     detail_col_type: 'movie_1',
     sdetail_col_type: 'movie_1',
@@ -289,140 +292,200 @@ var rule = {
         setResult(d);
     }, LAZY_CODE, FULL_HEADERS_JSON),
 
-    // ============ search_find_rule: 麦田模式 ============
-    // 直接 OkHttp fetch /search.asp?keyword=kw, 命中 CF 才开 WebView, 否则正常解析
-    search_find_rule: $.toString((LAZY_CODE, FULL_HEADERS_JSON, SITE_HOST) => {
+    // ============ search_find_rule: WebView 抽 DOM 模式 ============
+    // 历史教训(memory: zyshow.co CF 按路径细粒度): /search.asp 用 OkHttp 即使带 cf_clearance
+    // 也拦死 → 不能再 fetch /search.asp。改用 x5 WebView 跑真浏览器栈, JS 抽 DOM 后 putVar,
+    // refreshPage 让 search_find_rule 再跑一次时从缓存渲染卡片。
+    //
+    // 流程: hiker://search?rule=zyshow3&s=<kw> 进入 → MY_URL.split('key=') 取 kw →
+    //   缓存命中 → 渲染结果列表
+    //   缓存未命中 → push 一个 x5_webview_single, JS 在 webview 内
+    //     ① wait 真页面 (title 非 challenge && body > 3000)
+    //     ② 抽 a[href*="/v/"] 集数命中 + a[href^="/.../"] 节目命中
+    //     ③ fba.putVar('zys3_wv_results', JSON) + fba.putVar('zys3_wv_results_kw', kw)
+    //     ④ fba.parseLazyRule(refreshPage) — search_find_rule 再跑, 命中缓存渲染
+    search_find_rule: $.toString((LAZY_CODE, SITE_HOST) => {
         var d = [];
         (function () {
-            var cookie = getItem('zys3_cookie', '');
-            var hd = JSON.parse(FULL_HEADERS_JSON);
-            if (cookie) hd['Cookie'] = cookie;
+            var escapeHtml = function (s) {
+                return ('' + (s || '')).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            };
 
-            // 海阔搜索: MY_URL = searchUrl 替换 ** 为 kw, 即 /search.asp?keyword=<kw>
-            // 兼容性: getResCode() 有些版本不可用, 直接 fetch MY_URL
-            var html = '';
-            var err = '';
-            try { html = fetch(MY_URL, {headers: hd}) || ''; }
-            catch (e) { err = e.message || ('' + e); }
-
-            // 麦田同款验证特征 + zyshow CF 特征
-            var NEED_VERIFY_RE = /Just a moment|Checking your browser before accessing|cf-browser-verification|id=["']cf-error-details["']|Attention Required.*Cloudflare|安全检测能力由|人机验证|长亭|雷池|检查/i;
-
-            if (err) {
-                d.push({title: '❌ 加载失败: ' + err, col_type: 'rich_text'});
-                setResult(d);
+            var kw = '';
+            try { kw = decodeURIComponent((MY_URL.split('key=')[1] || '').split('&')[0]); } catch (e) {}
+            if (!kw) {
+                d.push({title: '请输入关键字', col_type: 'rich_text'});
                 return;
             }
 
-            // 需要人机验证 — 麦田模式: 给一个可点击卡片, 进 x5_webview 让用户过验证
-            if (NEED_VERIFY_RE.test(html) || (html || '').length < 1000) {
-                d.push({
-                    title: '点击人机验证, 验证后返回, 等 3 秒下拉刷新',
-                    col_type: 'text_center_1',
-                    url: $('hiker://empty').rule((MY_URL, FULL_HEADERS_JSON) => {
-                        var d = [];
+            var resJson = getVar('zys3_wv_results', '');
+            var resKw = getVar('zys3_wv_results_kw', '');
+            var hasResults = resJson && resKw === kw;
+
+            d.push({title: '🔍 搜索: <b>' + escapeHtml(kw) + '</b>', col_type: 'rich_text'});
+
+            if (hasResults) {
+                var results = [];
+                try { results = JSON.parse(resJson) || []; } catch (e) {}
+                var dump = getVar('zys3_wv_dump', '');
+
+                if (results.length === 0) {
+                    d.push({title: '&nbsp;&nbsp;⚠ 未抽到结果', col_type: 'rich_text'});
+                    if (dump) {
+                        d.push({col_type: 'blank_block'});
+                        d.push({title: 'DOM 预览', col_type: 'rich_text'});
                         d.push({
-                            title: '',
-                            url: MY_URL,
-                            col_type: 'x5_webview_single',
-                            desc: 'float&&100%',
-                            extra: {
-                                canBack: true,
-                                js: $.toString(() => {
-                                    function check() {
-                                        try {
-                                            var c = '';
-                                            try { c = fba.getCookie(location.href) || ''; } catch (e) {}
-                                            // 麦田观察: DOM 出现节目卡片 + cookie 拿到, 即视为过关
-                                            var hasResults = false;
-                                            try {
-                                                hasResults = !!document.querySelector('a[href*="/v/"], a[href^="/"]');
-                                            } catch (e) {}
-                                            var titleStr = document.title || '';
-                                            var bodyLen = ((document.body && document.body.innerHTML) || '').length;
-                                            var notChallenge = !/Just a moment/i.test(titleStr) && bodyLen > 3000;
-                                            if (hasResults && c && notChallenge) {
-                                                fba.putVar('zys3_ck_from_wv', c);
-                                                fba.log('zys3 cookie: ' + c);
-                                                fba.parseLazyRule($$$().lazyRule(() => {
-                                                    var ck = getVar('zys3_ck_from_wv', '');
-                                                    if (ck) setItem('zys3_cookie', ck);
-                                                    back();
-                                                }));
-                                                return;
-                                            }
-                                        } catch (e) {
-                                            try { fba.log('zys3 verify err: ' + e.message); } catch (ee) {}
-                                        }
-                                        setTimeout(check, 300);
-                                    }
-                                    setTimeout(check, 800);
-                                })
-                            }
+                            title: '<font color="#666">' + escapeHtml(dump.substring(0, 1500)) + '</font>',
+                            col_type: 'rich_text'
                         });
-                        setResult(d);
-                    }, MY_URL, FULL_HEADERS_JSON)
+                    }
+                } else {
+                    d.push({title: '&nbsp;&nbsp;✅ ' + results.length + ' 条结果', col_type: 'rich_text'});
+                    results.forEach((r) => {
+                        var abs = /^https?:/.test(r.href) ? r.href : (SITE_HOST + r.href);
+                        var url = /\/v\/\d{8}\.html/.test(r.href)
+                            ? abs + '@lazyRule=.js:' + LAZY_CODE
+                            : abs;
+                        d.push({
+                            title: r.title,
+                            desc: r.desc || '',
+                            url: url,
+                            col_type: 'text_1'
+                        });
+                    });
+                }
+
+                d.push({col_type: 'blank_block'});
+                d.push({
+                    title: '🔁 重搜 (清缓存)',
+                    url: $('#noLoading#').lazyRule(() => {
+                        putVar({key: 'zys3_wv_results', value: ''});
+                        putVar({key: 'zys3_wv_results_kw', value: ''});
+                        putVar({key: 'zys3_wv_dump', value: ''});
+                        refreshPage();
+                        return 'hiker://empty';
+                    }),
+                    col_type: 'text_center_1'
                 });
-                setResult(d);
                 return;
             }
 
-            // 正常解析 — /search.asp 结果页, 抓所有 /v/<date>.html 节目集 + /<slug>/ 节目主页
-            var results = [];
-            var seen = {};
+            // 未命中缓存 — 放 WebView 抽 DOM, 抽完 refreshPage 自己跑一次
+            d.push({
+                title: '&nbsp;&nbsp;⏳ WebView 加载 /search.asp, 抽完自动刷新...',
+                desc: '若出现 Cloudflare Turnstile, 请点击"我是真人"',
+                col_type: 'rich_text'
+            });
+            d.push({
+                col_type: 'x5_webview_single',
+                url: SITE_HOST + '/search.asp?keyword=' + encodeURIComponent(kw),
+                desc: 'float&&80%',
+                title: '',
+                extra: {
+                    canBack: true,
+                    js: $.toString(() => {
+                        var tries = 0;
+                        var maxTries = 60;
+                        function extract() {
+                            tries++;
+                            try {
+                                var bodyLen = ((document.body && document.body.innerHTML) || '').length;
+                                var titleStr = document.title || '';
+                                if (/Just a moment|Attention Required/i.test(titleStr) || bodyLen < 3000) {
+                                    if (tries < maxTries) { setTimeout(extract, 800); return; }
+                                    fba.toast('45s 内未通过 CF / 未加载完成');
+                                    return;
+                                }
 
-            // 1) 集数命中: /v/\d{8}.html
-            var trBlocks = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
-            for (var i = 0; i < trBlocks.length; i++) {
-                var tr = trBlocks[i];
-                var hM = tr.match(/href="([^"]*\/v\/\d{8}\.html)"/);
-                if (!hM) continue;
-                var href = hM[1];
-                if (seen[href]) continue;
-                seen[href] = 1;
-                var tM = tr.match(/<a[^>]*\btitle="([^"]+)"/);
-                var title = tM ? tM[1] : href;
-                var tds = tr.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [];
-                var stripTd = function (s) { return (s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); };
-                var subj = tds.length >= 2 ? stripTd(tds[1]) : '';
-                var guests = tds.length >= 3 ? stripTd(tds[2]) : '';
-                var desc = (subj ? subj.substring(0, 50) : '') + (guests ? '\n' + guests.substring(0, 40) : '');
-                var absHref = /^https?:/.test(href) ? href : (SITE_HOST + (href.indexOf('/') === 0 ? href : '/' + href));
-                results.push({
-                    title: title,
-                    desc: desc,
-                    url: absHref + '@lazyRule=.js:' + LAZY_CODE,
-                    col_type: 'text_1'
-                });
-            }
+                                // 同步保存 webview 的 cookie 顺便给 detail/lazy 用
+                                try {
+                                    var ck = fba.getCookie(location.href) || document.cookie || '';
+                                    if (ck && ck.indexOf('cf_clearance') >= 0) {
+                                        fba.putVar('zys3_ck_from_wv', ck);
+                                    }
+                                } catch (e) {}
 
-            // 2) 节目命中: /<slug>/
-            var anchorRe = /<a[^>]+href="\/([a-zA-Z0-9_]+)\/"[^>]*(?:title="([^"]*)")?[^>]*>([\s\S]*?)<\/a>/g;
-            var am;
-            while ((am = anchorRe.exec(html)) !== null) {
-                var slug = am[1];
-                if (/^(search|index|admin|api|v|img|css|js|static|home|about|contact)$/i.test(slug)) continue;
-                var skey = 'show:' + slug;
-                if (seen[skey]) continue;
-                seen[skey] = 1;
-                var st = (am[2] || am[3] || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-                if (!st || st.length > 30) continue;
-                results.push({
-                    title: '[节目] ' + st,
-                    desc: 'slug=' + slug,
-                    url: SITE_HOST + '/' + slug + '/',
-                    col_type: 'text_1'
-                });
-            }
+                                var kw = '';
+                                try {
+                                    var mm = location.search.match(/[?&]keyword=([^&]*)/);
+                                    if (mm) kw = decodeURIComponent(mm[1].replace(/\+/g, ' '));
+                                } catch (e) {}
 
-            if (results.length === 0) {
-                d.push({title: '无匹配结果', col_type: 'rich_text'});
-            } else {
-                for (var k = 0; k < results.length; k++) d.push(results[k]);
-            }
+                                var results = [];
+                                var seen = {};
+
+                                var anchors = document.querySelectorAll('a[href]');
+                                for (var i = 0; i < anchors.length; i++) {
+                                    var a = anchors[i];
+                                    var href = a.getAttribute('href') || '';
+                                    if (!/\/v\/\d{8}\.html/.test(href)) continue;
+                                    if (seen[href]) continue;
+                                    seen[href] = 1;
+                                    var title = (a.getAttribute('title') || a.textContent || '').replace(/\s+/g, ' ').trim();
+                                    var tr = null;
+                                    try { tr = a.closest ? a.closest('tr') : null; } catch (e) {}
+                                    if (!tr) {
+                                        var p = a.parentNode;
+                                        for (var k = 0; k < 5 && p; k++) {
+                                            if (p.tagName && p.tagName.toLowerCase() === 'tr') { tr = p; break; }
+                                            p = p.parentNode;
+                                        }
+                                    }
+                                    var desc = '';
+                                    if (tr) {
+                                        var tds = tr.querySelectorAll('td');
+                                        var parts = [];
+                                        for (var j = 0; j < tds.length; j++) {
+                                            var s = (tds[j].textContent || '').replace(/\s+/g, ' ').trim();
+                                            if (s && s !== title) parts.push(s);
+                                        }
+                                        desc = parts.slice(0, 3).join(' / ').substring(0, 120);
+                                    }
+                                    results.push({href: href, title: title || href, desc: desc});
+                                }
+
+                                for (var n = 0; n < anchors.length; n++) {
+                                    var sa = anchors[n];
+                                    var sh = sa.getAttribute('href') || '';
+                                    var sm = sh.match(/^\/([a-zA-Z0-9_]+)\/?$/);
+                                    if (!sm) continue;
+                                    var slug = sm[1];
+                                    if (/^(search|index|admin|api|v|img|css|js|static|home|about|contact)$/i.test(slug)) continue;
+                                    var skey = 'show:' + slug;
+                                    if (seen[skey]) continue;
+                                    var st = (sa.getAttribute('title') || sa.textContent || '').replace(/\s+/g, ' ').trim();
+                                    if (!st || st.length > 30) continue;
+                                    seen[skey] = 1;
+                                    results.push({href: '/' + slug + '/', title: '[节目] ' + st, desc: 'slug=' + slug});
+                                }
+
+                                if (results.length === 0) {
+                                    if (tries < maxTries) { setTimeout(extract, 1000); return; }
+                                    var dump = ((document.body.innerText || document.body.textContent) || '').replace(/\s+/g, ' ').substring(0, 2000);
+                                    fba.putVar('zys3_wv_dump', dump);
+                                    fba.putVar('zys3_wv_results', '[]');
+                                    fba.putVar('zys3_wv_results_kw', kw);
+                                    fba.toast('⚠ 未抽到结果, 见 DOM 预览');
+                                    fba.parseLazyRule($$$().lazyRule(() => { refreshPage(); }));
+                                    return;
+                                }
+
+                                fba.putVar('zys3_wv_results', JSON.stringify(results));
+                                fba.putVar('zys3_wv_results_kw', kw);
+                                fba.toast('✅ 抓到 ' + results.length + ' 条, 刷新页面');
+                                fba.parseLazyRule($$$().lazyRule(() => { refreshPage(); }));
+                            } catch (e) {
+                                try { fba.log('zys3 wv search err: ' + e.message); } catch (ee) {}
+                                if (tries < maxTries) setTimeout(extract, 1000);
+                            }
+                        }
+                        setTimeout(extract, 1800);
+                    })
+                }
+            });
         })();
         setResult(d);
-    }, LAZY_CODE, FULL_HEADERS_JSON, SITE_HOST),
+    }, LAZY_CODE, SITE_HOST),
 
     // ============ pages: 子页面 ============
     pages: (function () {

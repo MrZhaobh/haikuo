@@ -20,7 +20,7 @@ https://raw.githubusercontent.com/MrZhaobh/haikuo/main/clipboard.json
 | zyshow11 | [zyshow11/](zyshow11/) | https://www.zyshow.co/11dianrechaodian/ | 台湾 TVBS 综艺《11点热炒店》单节目滚动归档 |
 | zyshow | [zyshow/](zyshow/) | https://www.zyshow.co | 综艺巴士 — 台湾综艺 35 节目全站(11点热炒店 / 综艺大热门 / 小姐不熙娣 …) |
 | zyshow2 | [zyshow2/](zyshow2/) | https://www.zyshow.co | 综艺巴士 深搜索测试版 — WebView 抓 CF cookie + 全节目索引,可搜嘉宾/主题(与 zyshow 并行) |
-| zyshow3 | [zyshow3/](zyshow3/) | https://www.zyshow.co | 综艺巴士 麦田式搜索版 — 主页搜索框 → fetch /search.asp 命中 CF 才开 WebView 验证(与 zyshow/zyshow2 并行) |
+| zyshow3 | [zyshow3/](zyshow3/) | https://www.zyshow.co | 综艺巴士 标准搜索 + WebView 版 — 主页搜索框 → `hiker://search` → search_find_rule 内 push x5 WebView 抽 DOM 回填(与 zyshow/zyshow2 并行) |
 
 每个站点目录下都有自己的 `README.md`、`compile.js` (或 `decode.js`)、`clipboard.json` 与各类口令文件。
 
