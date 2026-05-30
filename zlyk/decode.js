@@ -138,7 +138,27 @@ if (rule.find_rule) {
 //   5. 集数渲染成卡片, 点击 → @lazyRule 调 lazy 子页解 m3u8/mp4
 //   6. 集数标题长 (>10字) 用 text_1, 短的用 text_3 (避免截断, 见 skill cookbook)
 // ============================
+// lazy 字符串拼接形式: 顶层不能 return / IIFE 不行, 用 __r 累积 + 最后一行裸表达式
+// (写到 INLINE_ERJI_TEMPLATE 里, 选集 url 直接 `@lazyRule=.js:` + 这段, 绕过 $.require)
+const ERJI_LAZY_CODE = (
+    "var __r = ''; " +
+    "try { " +
+    "var __m = request(input).match(/r player_.*?=(.*?)</); " +
+    "if (!__m) __r = 'video://' + input; " +
+    "else { " +
+    "var __h = JSON.parse(__m[1]); " +
+    "var __u = __h.url; " +
+    "if (__h.encrypt == '1') __u = unescape(__u); " +
+    "else if (__h.encrypt == '2') __u = unescape(base64Decode(__u)); " +
+    "if (/m3u8|mp4/.test(__u)) __r = __u; else __r = 'video://' + input; " +
+    "} " +
+    "} catch (e) { __r = 'video://' + input; } " +
+    "__r"
+);
+
 const INLINE_ERJI_TEMPLATE = [
+    // lazy code 序列化成字符串变量, 每条选集 url 拼接 `@lazyRule=.js:` + 它
+    "var __lazyCode = " + JSON.stringify(ERJI_LAZY_CODE) + ";",
     "var __lineKey = MY_RULE.title + '_line';",
     // 海阔 pdfa 三段 selector (a&&b&&c) 在多元素时只返 1 条, 拆成 2 段 + pdfh 内层
     // (原作者的 线路='body&&.stui-pannel__head&&h3.title' 是 3 段, 在海阔环境本就 bug)
@@ -182,7 +202,7 @@ const INLINE_ERJI_TEMPLATE = [
     "  if (!hh) return;",
     "  d.push({",
     "    title: tt,",
-    "    url: hh + '#immersiveTheme##autoCache#@lazyRule=.js:$.require(\"lazy\")',",
+    "    url: hh + '#immersiveTheme##autoCache#@lazyRule=.js:' + __lazyCode,",
     "    col_type: __epCol",
     "  });",
     "});",
