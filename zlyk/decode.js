@@ -209,6 +209,18 @@ if (rule.pages) {
             }
             rule.pages = JSON.stringify(pagesArr);
         }
+
+        // === lazy 子页 fix: var 声明 → expression statement ===
+        // 原作者: `var lazy = $('').lazyRule(() => {...})`
+        // 顶层 var 声明语句的 completion value 是 undefined, $.require("lazy")
+        // 拿到 undefined → 海阔显示"未知链接：0"。
+        // 修法: 去掉 `var lazy = ` 让 lazyRule 字符串作为 completion value。
+        const lazy = pagesArr.find(p => p.path === 'lazy' || p.name === 'lazy');
+        if (lazy && /^\s*var\s+lazy\s*=\s*\$/.test(lazy.rule)) {
+            lazy.rule = lazy.rule.replace(/^\s*var\s+lazy\s*=\s*/, '');
+            console.log('  ✓ lazy 子页: 去掉 "var lazy = ", lazyRule 字符串作 completion value (修"未知链接：0")');
+            rule.pages = JSON.stringify(pagesArr);
+        }
     }
 }
 
