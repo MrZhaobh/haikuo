@@ -2,6 +2,8 @@
 
 麦田影院 (用户社区分享的海阔视界规则)。本目录通过 SQLite 备份导出 + v2 改写。
 
+**当前主域名: `https://www.mtyy5.cc`**(原 `mtyy5.com` 已下线 → 2026-05 迁 `.cc`)。备用镜像群 `mtyy3/4/7/8/9.com`、`mtyy.net` 等指向同一站。若 .cc 再死,用同样方式 `replace_all mtyy5.cc → 新域名` 重跑 `node decode.js && cd .. && node build-all.js` 即可。
+
 ## 单口令导入(推荐)
 
 复制 `token-quick.txt` 全文,海阔 → 我的 → 长按"我的小程序"标题 → 添加小程序 → 粘贴板。

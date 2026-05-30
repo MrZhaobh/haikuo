@@ -19,6 +19,7 @@ const SITES = [
     { name: 'zyshow11',  file: 'zyshow11/clipboard.json' }, // 11点热炒店 单节目 (zyshow.co)
     { name: 'zyshow',    file: 'zyshow/clipboard.json' },   // 综艺巴士 全站台综 35 节目 (zyshow.co)
     { name: 'zyshow2',   file: 'zyshow2/clipboard.json' },  // 综艺巴士 深搜索版 (WebView 抓 CF cookie + 全节目索引缓存)
+    { name: 'zyshow3',   file: 'zyshow3/clipboard.json' },  // 综艺巴士 麦田式搜索 (主页搜索框 + fetch-first, 命中 CF 才开 WebView)
 ];
 
 // 订阅源里所有规则统一分组 (各站源数据 group 不变, 仅在聚合输出里覆盖)

@@ -16,10 +16,11 @@ https://raw.githubusercontent.com/MrZhaobh/haikuo/main/clipboard.json
 |---|---|---|---|
 | sugoideas | [sugoideas/](sugoideas/) | https://sugoideas.com (亦 segoideas/srgoideas) | 台湾偶像剧 + 综艺 |
 | nivod | [nivod/](nivod/) | https://www.nivod.cc | 海外华人在线影院 (电影/电视剧/综艺/动漫) |
-| mtyy | [mtyy/](mtyy/) | (社区分享口令) | 麦田影院 — 由 SQLite 备份导出 |
+| mtyy | [mtyy/](mtyy/) | https://www.mtyy5.cc | 麦田影院 — 由 SQLite 备份导出 (原 mtyy5.com 2026-05 下线,迁 .cc) |
 | zyshow11 | [zyshow11/](zyshow11/) | https://www.zyshow.co/11dianrechaodian/ | 台湾 TVBS 综艺《11点热炒店》单节目滚动归档 |
 | zyshow | [zyshow/](zyshow/) | https://www.zyshow.co | 综艺巴士 — 台湾综艺 35 节目全站(11点热炒店 / 综艺大热门 / 小姐不熙娣 …) |
 | zyshow2 | [zyshow2/](zyshow2/) | https://www.zyshow.co | 综艺巴士 深搜索测试版 — WebView 抓 CF cookie + 全节目索引,可搜嘉宾/主题(与 zyshow 并行) |
+| zyshow3 | [zyshow3/](zyshow3/) | https://www.zyshow.co | 综艺巴士 麦田式搜索版 — 主页搜索框 → fetch /search.asp 命中 CF 才开 WebView 验证(与 zyshow/zyshow2 并行) |
 
 每个站点目录下都有自己的 `README.md`、`compile.js` (或 `decode.js`)、`clipboard.json` 与各类口令文件。
 
@@ -36,7 +37,8 @@ sugo/
 ├── mtyy/
 ├── zyshow11/
 ├── zyshow/
-└── zyshow2/
+├── zyshow2/
+└── zyshow3/
 ```
 
 ## 添加新站点
@@ -65,6 +67,7 @@ node nivod/compile.js
 node zyshow11/compile.js
 node zyshow/compile.js
 node zyshow2/compile.js
+node zyshow3/compile.js
 # (mtyy 由 SQLite 备份脚本生成,见 mtyy/README.md)
 
 # 聚合到根 clipboard.json
