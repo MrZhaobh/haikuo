@@ -54,25 +54,90 @@ if (rule.title === '周六影库 1') {
 // 同款 maccms 主题的麦田 (mtyy5.cc) 用的就是 path 形式, 实测 zlykw.com 也支持
 // (curl `vodsearch/<kw>----------1---.html` 返 200 + 9 结果含"四季情第一季")
 // ============================
-// path 形式 + 去掉 fypage (实验: cookbook 说支持但用户实测海阔报 error scheme,
-// 怀疑某些 v2 版本 fypage 在 search_url 字段处理有 bug, 改固定 page=1, 暂时舍弃翻页)
-if (rule.search_url && /vodsearch\/(-+\.html\?wd=\*\*|\*\*-+fypage-+\.html)/.test(rule.search_url)) {
-    const orig = rule.search_url;
-    rule.search_url = 'https://www.zlykw.com/vodsearch/**----------1---.html';
-    console.log('  ✓ search_url:', JSON.stringify(orig), '→', JSON.stringify(rule.search_url));
-} else if (rule.search_url && /&amp;/.test(rule.search_url)) {
-    rule.search_url = rule.search_url.replace(/&amp;/g, '&');
-    console.log('  ✓ search_url: 去掉 &amp; HTML entity');
-}
+// ============================
+// 彻底放弃 v2 schema 的搜索路径!
+//   实测无论 search_url 是 `?wd=**` query 形式 / path `**----------fypage---.html` /
+//   path 固定 page=1 / 净化掉 &amp;, 海阔都报 ArticleListModel 'Expected URL scheme error'.
+//   推测某个海阔版本的 v2 search_url 处理流程对这种规则结构有 bug, 内部产生 'error://' 占位.
+//   解法: 清空 search_url + searchFind, 让海阔不暴露 v2 搜索框 / 不走 ArticleListModel 搜索路径,
+//   改在 find_rule 顶部自实现 input + getVar('kw') 分支 + 自己 fetch + 渲染.
+// ============================
+rule.search_url = '';
+rule.searchFind = '';
+console.log('  ✓ search_url + searchFind 清空 (改 find_rule 内自实现搜索, 绕开 v2 path)');
 
-// === find_rule 顶部加版本号卡片, 用户主页看到这个就知道缓存已刷 ===
-const VERSION_TAG = '🏷️ v2026-05-31-c (无 fypage / 内联 lazy / search DEBUG)';
-if (rule.find_rule && !/RULE VERSION/.test(rule.find_rule)) {
-    rule.find_rule = rule.find_rule.replace(
-        /^(js:\n?var d = \[\];\n)/,
-        '$1d.push({title: "🏷️ RULE VERSION: ' + VERSION_TAG + '", col_type: "rich_text"});\n'
-    );
-    console.log('  ✓ find_rule: 加版本号卡片 (' + VERSION_TAG + ')');
+// ============================
+// find_rule 自实现搜索块 + 包装原列表代码
+// ============================
+const VERSION_TAG = '🏷️ v2026-05-31-d (find_rule 内置搜索)';
+const KW_KEY = '周六影库_kw';
+const SEARCH_BLOCK = [
+    // 版本号 + 搜索 input (always show)
+    'd.push({title: "🏷️ ' + VERSION_TAG + '", col_type: "rich_text"});',
+    'var __kw = getVar("' + KW_KEY + '", "");',
+    'd.push({',
+    '  desc: __kw ? "当前: " + __kw : "🔍 搜你想看的...",',
+    '  col_type: "input",',
+    '  extra: {',
+    '    defaultValue: __kw,',
+    '    titleVisible: false,',
+    '    onChange: \'if(input!==getVar("' + KW_KEY + '","")){putVar({key:"' + KW_KEY + '",value:input});refreshPage(false)}\'',
+    '  }',
+    '});',
+    'if (__kw) {',
+    // 清空按钮
+    '  d.push({',
+    '    title: "✖ 清空搜索",',
+    '    url: $("#noLoading#").lazyRule(function(k){ putVar({key:k, value:""}); refreshPage(false); return "hiker://empty"; }, "' + KW_KEY + '"),',
+    '    col_type: "scroll_button"',
+    '  });',
+    // 自 fetch 搜索 URL (path 形式 + 固定 page=1, 我们自己 request 不走 ArticleListModel)
+    '  var __sUrl = "https://www.zlykw.com/vodsearch/" + encodeURIComponent(__kw) + "----------1---.html";',
+    '  var __sHtml = ""; try { __sHtml = request(__sUrl) || ""; } catch (e) { __sHtml = ""; }',
+    '  d.push({title: "🔍 搜索结果 (html.len=" + __sHtml.length + ")", col_type: "rich_text"});',
+    '  if (!__sHtml) {',
+    '    d.push({title: "⚠️ fetch 失败, 网络或 CF 拦了?", col_type: "rich_text"});',
+    '  } else {',
+    '    var __sList = []; try { __sList = pdfa(__sHtml, ".stui-vodlist&&li") || []; } catch (e) {}',
+    '    if (__sList.length === 0) {',
+    '      d.push({title: "未搜到 " + __kw, col_type: "rich_text"});',
+    '    } else {',
+    '      for (var __sj = 0; __sj < __sList.length; __sj++) {',
+    '        var __sli = __sList[__sj]; if (!__sli) continue;',
+    '        var __slink = ""; try { __slink = pd(__sli, "a&&href") || ""; } catch (e) {}',
+    // 跳广告占位
+    '        if (!__slink || __slink === "#" || __slink.charAt(__slink.length-1) === "#" || __slink.indexOf("javascript") === 0) continue;',
+    '        if (__slink.indexOf("http") !== 0 && __slink.charAt(0) === "/") __slink = "https://www.zlykw.com" + __slink;',
+    '        if (__slink.indexOf("http") !== 0) continue;',
+    '        var __st = ""; try { __st = pdfh(__sli, "a&&title") || ""; } catch (e) {}',
+    '        var __sdesc = ""; try { __sdesc = pdfh(__sli, ".pic-text&&Text") || ""; } catch (e) {}',
+    '        var __simg = ""; try { __simg = pd(__sli, "a&&data-original") || ""; } catch (e) {}',
+    '        d.push({',
+    '          title: __st || __slink,',
+    '          desc: __sdesc,',
+    '          pic_url: __simg ? (__simg + "@Referer=https://www.zlykw.com/") : "",',
+    '          url: __slink + "#immersiveTheme##autoCache#@rule=js:$.require(\\"er\\")"',
+    '        });',
+    '      }',
+    '    }',
+    '  }',
+    '  setResult(d);',
+    '} else {',
+    // 原 find_rule 主体放这里
+].join('\n');
+
+if (rule.find_rule && !/v2026-05-31-d/.test(rule.find_rule)) {
+    // 提取原 find_rule 主体 (去 js: 前缀 + 去首行 var d = []), 防与新 d 重复
+    const origBody = rule.find_rule
+        .replace(/^js:\n?/, '')
+        .replace(/^var d = \[\];\n?/, '');
+    rule.find_rule =
+        'js:\n' +
+        'var d = [];\n' +
+        SEARCH_BLOCK + '\n' +
+        origBody + '\n' +
+        '}';   // 关 else 块
+    console.log('  ✓ find_rule: 注入自实现搜索块 (' + VERSION_TAG + ')');
 }
 
 // ============================
