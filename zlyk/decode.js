@@ -40,6 +40,26 @@ if (rule.find_rule && /分类标领/.test(rule.find_rule)) {
 }
 
 // ============================
+// 硬化: find_rule 里那些 `const 中文名 = ...` 改成 `var`,
+// 因为 dt 子页是 `eval(JSON.parse(request('hiker://page/dt')).rule)` 注入进来的,
+// 海阔 JSEngine (Rhino 派) 对 ES6 `const`/`let` 在 eval 跨边界时有时
+// 作用域可见性不对, 用 `var` (function-scoped) 最稳。
+// ============================
+if (rule.find_rule) {
+    const before = rule.find_rule;
+    // 注意: \b 在中文字符前不算 word boundary, 必须显式锚定行首或前置空白
+    rule.find_rule = rule.find_rule.replace(
+        /(^|[\s;])const(\s+)(分类颜色|大类定位|小类定位|大类过滤|分类标题|分类链接|排除|page)/g,
+        '$1var$2$3'
+    );
+    if (rule.find_rule !== before) {
+        console.log('  ✓ find_rule: const 中文变量 → var (Rhino eval 作用域硬化)');
+    } else {
+        console.warn('  ⚠️ const → var 替换没命中, 检查 decode.js 正则');
+    }
+}
+
+// ============================
 // 后处理: 把 er 子页里 eval('hiker://page/erji?rule=模板·Q') 这一行
 // 替换成内联的"二级播放页"实现, 去掉对海阔内置 模板·Q 的依赖
 //
