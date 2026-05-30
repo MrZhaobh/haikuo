@@ -319,7 +319,7 @@ var rule = {
                 d.push({
                     title: '点击人机验证, 验证后返回, 等 3 秒下拉刷新',
                     col_type: 'text_center_1',
-                    url: $('').rule((MY_URL, FULL_HEADERS_JSON) => {
+                    url: $('hiker://empty').rule((MY_URL, FULL_HEADERS_JSON) => {
                         var d = [];
                         d.push({
                             title: '',
