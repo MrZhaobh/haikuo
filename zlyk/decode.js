@@ -54,13 +54,25 @@ if (rule.title === '周六影库 1') {
 // 同款 maccms 主题的麦田 (mtyy5.cc) 用的就是 path 形式, 实测 zlykw.com 也支持
 // (curl `vodsearch/<kw>----------1---.html` 返 200 + 9 结果含"四季情第一季")
 // ============================
-if (rule.search_url && /vodsearch\/-+\.html\?wd=\*\*/.test(rule.search_url)) {
+// path 形式 + 去掉 fypage (实验: cookbook 说支持但用户实测海阔报 error scheme,
+// 怀疑某些 v2 版本 fypage 在 search_url 字段处理有 bug, 改固定 page=1, 暂时舍弃翻页)
+if (rule.search_url && /vodsearch\/(-+\.html\?wd=\*\*|\*\*-+fypage-+\.html)/.test(rule.search_url)) {
     const orig = rule.search_url;
-    rule.search_url = 'https://www.zlykw.com/vodsearch/**----------fypage---.html';
+    rule.search_url = 'https://www.zlykw.com/vodsearch/**----------1---.html';
     console.log('  ✓ search_url:', JSON.stringify(orig), '→', JSON.stringify(rule.search_url));
 } else if (rule.search_url && /&amp;/.test(rule.search_url)) {
     rule.search_url = rule.search_url.replace(/&amp;/g, '&');
     console.log('  ✓ search_url: 去掉 &amp; HTML entity');
+}
+
+// === find_rule 顶部加版本号卡片, 用户主页看到这个就知道缓存已刷 ===
+const VERSION_TAG = '🏷️ v2026-05-31-c (无 fypage / 内联 lazy / search DEBUG)';
+if (rule.find_rule && !/RULE VERSION/.test(rule.find_rule)) {
+    rule.find_rule = rule.find_rule.replace(
+        /^(js:\n?var d = \[\];\n)/,
+        '$1d.push({title: "🏷️ RULE VERSION: ' + VERSION_TAG + '", col_type: "rich_text"});\n'
+    );
+    console.log('  ✓ find_rule: 加版本号卡片 (' + VERSION_TAG + ')');
 }
 
 // ============================
