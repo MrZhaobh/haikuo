@@ -102,24 +102,24 @@ if (rule.find_rule) {
 // ============================
 const INLINE_ERJI_TEMPLATE = [
     "var __lineKey = MY_RULE.title + '_line';",
-    "var __lines = pdfa(html, 线路) || [];",
+    // 海阔 pdfa 三段 selector (a&&b&&c) 在多元素时只返 1 条, 拆成 2 段 + pdfh 内层
+    // (原作者的 线路='body&&.stui-pannel__head&&h3.title' 是 3 段, 在海阔环境本就 bug)
+    "var __lines = pdfa(html, 'body&&.stui-pannel__head') || [];",
     "var __groups = pdfa(html, 选集) || [];",
-    // pannel__head 可能比 playlist 多 (猜你喜欢 / 相关推荐 也会用 pannel__head), 截到对齐
+    // pannel__head 可能比 playlist 多 (猜你喜欢 / 相关推荐 / 剧情介绍 也用 pannel__head), 截到对齐
     "if (__lines.length > __groups.length) __lines = __lines.slice(0, __groups.length);",
     "var __lineIdx = parseInt(getVar(__lineKey, '0')) || 0;",
     "if (__lineIdx >= __groups.length) __lineIdx = 0;",
-    // === DEBUG 卡片: 在二级页顶部显示数据流状态, 用户截图给我看哪一步抽空 ===
+    // DEBUG 留着, 方便用户继续观察
     "d.push({",
-    "  title: '🔍 DEBUG: html.len=' + (html ? html.length : 'NULL') + ' lines=' + __lines.length + ' groups=' + __groups.length + ' lineIdx=' + __lineIdx,",
+    "  title: '🔍 DEBUG: html.len=' + (html ? html.length : 'NULL') + ' lines=' + __lines.length + ' groups=' + __groups.length + ' lineIdx=' + __lineIdx + ' (修复后)',",
     "  col_type: 'rich_text'",
     "});",
-    "if (__groups.length === 0) {",
-    "  d.push({title: '⚠️ 没抽到 .stui-content__playlist, 站点结构可能换了, 把这条 desc 截图给我:', col_type: 'rich_text'});",
-    "  d.push({title: 'html 前 300 字: ' + (html || '').slice(0, 300).replace(/</g, '&lt;'), col_type: 'rich_text'});",
-    "}",
-    "if (__lines.length > 1) {",
+    "if (__lines.length >= 1) {",
     "  __lines.forEach(function (ln, i) {",
-    "    var tn = pdfh(ln, 线路名) || ('线路' + (i + 1));",
+    // 线路名 在 head outer html 里查 h3.title 的 text (2 段)
+    "    var tn = ''; try { tn = pdfh(ln, 'h3.title&&Text') || ''; } catch (e) {}",
+    "    if (!tn) tn = '线路' + (i + 1);",
     "    d.push({",
     "      title: (i === __lineIdx ? '🔥 ' : '') + tn,",
     "      url: $('#noLoading#').lazyRule(function (idx, key) {",
