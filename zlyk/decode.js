@@ -69,7 +69,7 @@ console.log('  ✓ search_url + searchFind 清空 (改 find_rule 内自实现搜
 // ============================
 // find_rule 自实现搜索块 + 包装原列表代码
 // ============================
-const VERSION_TAG = '🏷️ v2026-05-31-d (find_rule 内置搜索)';
+const VERSION_TAG = 'v2026-05-31-e (删 dt hiker://search input)';
 const KW_KEY = '周六影库_kw';
 const SEARCH_BLOCK = [
     // 版本号 + 搜索 input (always show)
@@ -126,7 +126,7 @@ const SEARCH_BLOCK = [
     // 原 find_rule 主体放这里
 ].join('\n');
 
-if (rule.find_rule && !/v2026-05-31-d/.test(rule.find_rule)) {
+if (rule.find_rule && !/v2026-05-31-[a-z]/.test(rule.find_rule)) {
     // 提取原 find_rule 主体 (去 js: 前缀 + 去首行 var d = []), 防与新 d 重复
     const origBody = rule.find_rule
         .replace(/^js:\n?/, '')
@@ -302,6 +302,28 @@ if (rule.pages) {
                 console.log('  ✓ er 子页 模板·Q → 内联实现 (去掉海阔内置模板依赖)');
             }
             rule.pages = JSON.stringify(pagesArr);
+        }
+
+        // === dt 子页 fix: 删原作者的 hiker://search input ===
+        // 原作者在分类页 dt 子页里放了:
+        //   s.push({ title: "搜索", url: "'hiker://search?rule=" + MY_RULE.title + "&s='input", col_type: "input" })
+        // 用户在 dt 子页 input 输入触发 hiker://search → 海阔调本规则的 v2 search_url (已被
+        // 清空) → 内部 fallback 产生 error://...  url → ArticleListModel 报
+        // 'Expected URL scheme error'.
+        // 直接删这段, find_rule 顶部已有自实现搜索 input.
+        const dt = pagesArr.find(p => p.path === 'dt' || p.name === 'dt');
+        if (dt && /hiker:\/\/search\?rule="\s*\+\s*MY_RULE\.title/.test(dt.rule)) {
+            const before = dt.rule;
+            dt.rule = dt.rule.replace(
+                /s\.push\(\{[\s\S]{0,200}?hiker:\/\/search[\s\S]{0,100}?\}\);/,
+                '/* 原作者 hiker://search input 已禁用 — 触发 v2 search_url 报 error scheme, 改用 find_rule 顶部自实现搜索 */'
+            );
+            if (dt.rule !== before) {
+                console.log('  ✓ dt 子页: 删 hiker://search input (修真正的 ArticleListModel error scheme 源头!)');
+                rule.pages = JSON.stringify(pagesArr);
+            } else {
+                console.warn('  ⚠️ dt 子页 hiker://search input 替换 regex 没命中');
+            }
         }
 
         // === lazy 子页 fix: var 声明 → expression statement ===
