@@ -67,16 +67,47 @@ if (rule.search_url) {
 }
 
 // ============================
-// searchFind: 过滤广告 li (href="#" 的"邀你领红包"占位)
-// 否则首条结果会拼成 https://www.zlykw.com/# 然后点开跳不到 er
+// searchFind 整段重写: 加广告过滤 + 硬 link 校验 + DEBUG 卡片
+// 修 ArticleListModel 'Expected URL scheme http/https but was error':
+// 怀疑某条 push 的 url 是 'error://...' (海阔 pd fallback), ArticleListModel
+// 拿到去 fetch 就炸。所有 url 必须以 http/https 开头才 push。
 // ============================
-if (rule.searchFind && /\.stui-vodlist&&li/.test(rule.searchFind) && !/href.*===.*['"]#['"]/.test(rule.searchFind)) {
-    rule.searchFind = rule.searchFind.replace(
-        /var link = pd\(list\[j\], 'a&&href'\);/,
-        "var link = pd(list[j], 'a&&href');\n    if (!link || link === '#' || link.indexOf('#') === link.length - 1) continue;  // 跳广告占位"
-    );
-    console.log('  ✓ searchFind: 加广告 li 过滤');
-}
+rule.searchFind = [
+    'js:',
+    'var d = [];',
+    'var host = "https://www.zlykw.com";',
+    'var __html = "";',
+    'try { __html = getResCode() || ""; } catch (e) { __html = ""; }',
+    'd.push({ title: "🔍 SEARCH DEBUG: html.len=" + __html.length, col_type: "rich_text" });',
+    'if (!__html) {',
+    '  d.push({ title: "⚠️ 搜索页 HTML 为空, 可能 search_url 模板出错 / 服务端 4xx / 海阔 fetch 失败", col_type: "rich_text" });',
+    '} else {',
+    '  var list = pdfa(__html, ".stui-vodlist&&li") || [];',
+    '  d.push({ title: "🔍 SEARCH DEBUG: list.length=" + list.length, col_type: "rich_text" });',
+    '  for (var j = 0; j < list.length; j++) {',
+    '    var li = list[j];',
+    '    if (!li) continue;',
+    '    var link = ""; try { link = pd(li, "a&&href") || ""; } catch (e) {}',
+    '    // 跳广告 li (href="#" / 空 / "javascript:" 之类)',
+    '    if (!link || link === "#" || link.charAt(link.length - 1) === "#" || link.indexOf("javascript") === 0) continue;',
+    '    // 补全相对路径',
+    '    if (link.indexOf("http") !== 0 && link.charAt(0) === "/") link = host + link;',
+    '    // 硬校验: 最终 url 必须以 http/https 开头, 否则跳过 (防 error:// 这类 fallback)',
+    '    if (link.indexOf("http") !== 0) continue;',
+    '    var t = ""; try { t = pdfh(li, "a&&title") || ""; } catch (e) {}',
+    '    var desc = ""; try { desc = pdfh(li, ".pic-text&&Text") || ""; } catch (e) {}',
+    '    var img = ""; try { img = pd(li, "a&&data-original") || ""; } catch (e) {}',
+    '    d.push({',
+    '      title: t || link,',
+    '      desc: desc,',
+    '      img: img ? (img + "@Referer=https://www.zlykw.com/") : "",',
+    '      url: link + "#immersiveTheme##autoCache#@rule=js:$.require(\\"er\\")"',
+    '    });',
+    '  }',
+    '}',
+    'setResult(d);'
+].join('\n');
+console.log('  ✓ searchFind: 整段重写 (DEBUG + 硬 url 校验)');
 
 // ============================
 // 硬化: find_rule 里那些 `const 中文名 = ...` 改成 `var`,
