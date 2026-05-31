@@ -178,9 +178,56 @@ if (v2.find_rule) {
     console.log('  ✓ find_rule: 注入自实现搜索块 (v2026-05-31-h)');
 }
 
+// ============================
+// 内联 er 子页的"模板·Q" 实现 (原作者依赖海阔内置模板, 没装就不渲染线路/选集).
+// pdfa 三段 selector 在海阔会只返 1 条, 拆成二段 + pdfh 内层 (memory: 74ffd3f).
+// ============================
+const INLINE_ERJI = [
+    "var __lineKey = MY_RULE.title + '_line';",
+    "var __lines = pdfa(html, 'body&&.stui-pannel__head') || [];",
+    "var __groups = pdfa(html, 选集) || [];",
+    "if (__lines.length > __groups.length) __lines = __lines.slice(0, __groups.length);",
+    "var __lineIdx = parseInt(getVar(__lineKey, '0')) || 0;",
+    "if (__lineIdx >= __groups.length) __lineIdx = 0;",
+    "if (__lines.length >= 1) {",
+    "  __lines.forEach(function (ln, i) {",
+    "    var tn = ''; try { tn = pdfh(ln, 'h3.title&&Text') || ''; } catch (e) {}",
+    "    if (!tn) tn = '线路' + (i + 1);",
+    "    d.push({",
+    "      title: (i === __lineIdx ? '🔥 ' : '') + tn,",
+    "      url: $('#noLoading#').lazyRule(function (idx, key) {",
+    "        putVar({key: key, value: idx + ''});",
+    "        refreshPage(false);",
+    "        return 'hiker://empty';",
+    "      }, i, __lineKey),",
+    "      col_type: 'scroll_button'",
+    "    });",
+    "  });",
+    "}",
+    "var __epHtml = __groups[__lineIdx] || '';",
+    "var __eps = pdfa(__epHtml, 选集列表) || [];",
+    "var __longTitle = __eps.some(function (ep) {",
+    "  var tt = ''; try { tt = pdfh(ep, 'a&&Text') || ''; } catch (e) {}",
+    "  return tt.length > 10;",
+    "});",
+    "var __epCol = __longTitle ? 'text_1' : 'text_3';",
+    "__eps.forEach(function (ep) {",
+    "  var tt = ''; try { tt = pdfh(ep, 'a&&Text') || ''; } catch (e) {}",
+    "  var hh = ''; try { hh = pd(ep, 'a&&href') || ''; } catch (e) {}",
+    "  if (!hh) return;",
+    "  d.push({",
+    "    title: tt,",
+    "    url: hh + '#immersiveTheme##autoCache#@lazyRule=.js:$.require(\"lazy\")',",
+    "    col_type: __epCol",
+    "  });",
+    "});"
+].join('\n');
+
 if (v2.pages) {
     try {
         const pagesArr = JSON.parse(v2.pages);
+
+        // dt 子页: 删原作者 hiker://search input (触发 v2 search_url 报 error scheme)
         const dt = pagesArr.find(p => p.path === 'dt' || p.name === 'dt');
         if (dt && /hiker:\/\/search\?rule=/.test(dt.rule)) {
             const before = dt.rule;
@@ -190,11 +237,35 @@ if (v2.pages) {
             );
             if (dt.rule !== before) {
                 console.log('  ✓ dt 子页: 删 hiker://search input');
-                v2.pages = JSON.stringify(pagesArr);
             } else {
                 console.warn('  ⚠️ dt 子页 hiker://search input 替换 regex 没命中');
             }
         }
+
+        // lazy 子页: 去 `var lazy = ` 让 lazyRule 字符串作 completion value
+        // (memory: 7b41e54, $.require("lazy") 拿 undefined → "未知链接:0")
+        const lazy = pagesArr.find(p => p.path === 'lazy' || p.name === 'lazy');
+        if (lazy && /^\s*var\s+lazy\s*=\s*\$/.test(lazy.rule)) {
+            lazy.rule = lazy.rule.replace(/^\s*var\s+lazy\s*=\s*/, '');
+            console.log('  ✓ lazy 子页: 去 "var lazy = " (修 $.require(\"lazy\") "未知链接:0")');
+        }
+
+        // er 子页: 替换 模板·Q eval 为内联线路/选集实现
+        const er = pagesArr.find(p => p.path === 'er' || p.name === 'er');
+        if (er && /模板·Q/.test(er.rule)) {
+            const before = er.rule;
+            er.rule = before.replace(
+                /eval\(JSON\.parse\(request\('hiker:\/\/page\/erji\?rule=模板·Q'\)\)\.rule\)/,
+                INLINE_ERJI
+            );
+            if (er.rule !== before) {
+                console.log('  ✓ er 子页: 内联 模板·Q (去海阔内置模板依赖)');
+            } else {
+                console.warn('  ⚠️ er 子页 模板·Q 替换 regex 没命中');
+            }
+        }
+
+        v2.pages = JSON.stringify(pagesArr);
     } catch (e) {
         console.error('  pages 处理 FAIL:', e.message);
     }
