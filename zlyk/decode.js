@@ -181,8 +181,27 @@ if (v2.find_rule) {
 // ============================
 // 内联 er 子页的"模板·Q" 实现 (原作者依赖海阔内置模板, 没装就不渲染线路/选集).
 // pdfa 三段 selector 在海阔会只返 1 条, 拆成二段 + pdfh 内层 (memory: 74ffd3f).
+// 选集 url 用 @lazyRule=.js:<inline> 而不是 $.require("lazy") —
+// $.require 返 lazyRule 魔法串, 在 @lazyRule=.js:<expr> 上下文不可用,
+// HikerView 会当 JSON parse → "Empty JSON string" (memory: f09a9e3).
 // ============================
+const ERJI_LAZY_CODE = (
+    "var __r = ''; " +
+    "try { " +
+    "var __m = request(input).match(/r player_.*?=(.*?)</); " +
+    "if (!__m) __r = 'video://' + input; " +
+    "else { " +
+    "var __h = JSON.parse(__m[1]); " +
+    "var __u = __h.url; " +
+    "if (__h.encrypt == '1') __u = unescape(__u); " +
+    "else if (__h.encrypt == '2') __u = unescape(base64Decode(__u)); " +
+    "if (/m3u8|mp4/.test(__u)) __r = __u; else __r = 'video://' + input; " +
+    "} " +
+    "} catch (e) { __r = 'video://' + input; } " +
+    "__r"
+);
 const INLINE_ERJI = [
+    "var __lazyCode = " + JSON.stringify(ERJI_LAZY_CODE) + ";",
     "var __lineKey = MY_RULE.title + '_line';",
     "var __lines = pdfa(html, 'body&&.stui-pannel__head') || [];",
     "var __groups = pdfa(html, 选集) || [];",
@@ -217,7 +236,7 @@ const INLINE_ERJI = [
     "  if (!hh) return;",
     "  d.push({",
     "    title: tt,",
-    "    url: hh + '#immersiveTheme##autoCache#@lazyRule=.js:$.require(\"lazy\")',",
+    "    url: hh + '#immersiveTheme##autoCache#@lazyRule=.js:' + __lazyCode,",
     "    col_type: __epCol",
     "  });",
     "});"
@@ -243,11 +262,11 @@ if (v2.pages) {
         }
 
         // lazy 子页: 去 `var lazy = ` 让 lazyRule 字符串作 completion value
-        // (memory: 7b41e54, $.require("lazy") 拿 undefined → "未知链接:0")
+        // (memory 7b41e54, $.require("lazy") 拿 undefined → "未知链接:0")
         const lazy = pagesArr.find(p => p.path === 'lazy' || p.name === 'lazy');
         if (lazy && /^\s*var\s+lazy\s*=\s*\$/.test(lazy.rule)) {
             lazy.rule = lazy.rule.replace(/^\s*var\s+lazy\s*=\s*/, '');
-            console.log('  ✓ lazy 子页: 去 "var lazy = " (修 $.require(\"lazy\") "未知链接:0")');
+            console.log('  ✓ lazy 子页: 去 "var lazy = " 前缀');
         }
 
         // er 子页: 替换 模板·Q eval 为内联线路/选集实现
