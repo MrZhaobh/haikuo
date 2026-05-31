@@ -92,6 +92,21 @@ const title = v2.title || titleFromToken;
 //   c. find_rule 顶部加自实现搜索块 → 自 fetch + 自渲染 (绕过 ArticleListModel)
 // ============================
 
+// ============================
+// 原作者 find_rule 本身有 2 个 bug, 不修就报 ReferenceError:
+//   1. typo: const 分类标领 = 'a&&Text' (lead), 但 dt 子页用的是 分类标题 (title)
+//   2. const 中文变量在 eval('hiker://page/dt') 内不可见 (Rhino 作用域怪异),
+//      改为 var (function-scoped) 才稳 (memory: commit 0d78165 教训)
+// ============================
+if (v2.find_rule) {
+    v2.find_rule = v2.find_rule.replace(/分类标领/g, '分类标题');
+    v2.find_rule = v2.find_rule.replace(
+        /(^|[\s;])const(\s+)(分类颜色|大类定位|小类定位|大类过滤|分类标题|分类链接|排除|page)/g,
+        '$1var$2$3'
+    );
+    console.log('  ✓ find_rule: typo (分类标领→分类标题) + const 中文变量→var');
+}
+
 v2.search_url = '';
 v2.searchFind = '';
 
