@@ -55,152 +55,19 @@ if (rule.title === '周六影库 1') {
 // (curl `vodsearch/<kw>----------1---.html` 返 200 + 9 结果含"四季情第一季")
 // ============================
 // ============================
-// 彻底放弃 v2 schema 的搜索路径!
-//   实测无论 search_url 是 `?wd=**` query 形式 / path `**----------fypage---.html` /
-//   path 固定 page=1 / 净化掉 &amp;, 海阔都报 ArticleListModel 'Expected URL scheme error'.
-//   推测某个海阔版本的 v2 search_url 处理流程对这种规则结构有 bug, 内部产生 'error://' 占位.
-//   解法: 清空 search_url + searchFind, 让海阔不暴露 v2 搜索框 / 不走 ArticleListModel 搜索路径,
-//   改在 find_rule 顶部自实现 input + getVar('kw') 分支 + 自己 fetch + 渲染.
+// search_url: 最小修复 — 只去 HTML entity `&amp;` → `&`
+//   (其他模板形式我们试过但都"修破"了 v2 schema, 既然别人能跑通原版,
+//    我们回到最少修改, 保持原作者意图. 如果用户海阔仍报 error scheme,
+//    再考虑别的策略)
 // ============================
-rule.search_url = '';
-rule.searchFind = '';
-console.log('  ✓ search_url + searchFind 清空 (改 find_rule 内自实现搜索, 绕开 v2 path)');
-
-// ============================
-// find_rule 自实现搜索块 + 包装原列表代码
-// ============================
-const VERSION_TAG = 'v2026-05-31-f (按钮触发搜索)';
-const KW_KEY = '周六影库_kw';
-const KW_TMP_KEY = '周六影库_kw_tmp';
-const SEARCH_BLOCK = [
-    // 版本号
-    'd.push({title: "🏷️ ' + VERSION_TAG + '", col_type: "rich_text"});',
-    'var __kw = getVar("' + KW_KEY + '", "");',
-    // input: onChange 只暂存到 _tmp, 不触发 refreshPage (不实时搜)
-    'd.push({',
-    '  desc: __kw ? "当前搜索: " + __kw : "🔍 输入后点【搜索】按钮",',
-    '  col_type: "input",',
-    '  extra: {',
-    '    defaultValue: __kw,',
-    '    titleVisible: false,',
-    '    onChange: \'putVar({key:"' + KW_TMP_KEY + '",value:input})\'',
-    '  }',
-    '});',
-    // 搜索按钮 + 清空按钮 (两列 scroll_button)
-    'd.push({',
-    '  title: "🔍 搜索",',
-    '  url: $("#noLoading#").lazyRule(function(kk, tk){',
-    '    var tmp = getVar(tk, "");',
-    '    if (!tmp) return "toast://请先在上方输入搜索词";',
-    '    if (tmp === getVar(kk, "")) return "toast://已是当前搜索词";',
-    '    putVar({key: kk, value: tmp});',
-    '    refreshPage(false);',
-    '    return "hiker://empty";',
-    '  }, "' + KW_KEY + '", "' + KW_TMP_KEY + '"),',
-    '  col_type: "scroll_button"',
-    '});',
-    'if (__kw) {',
-    '  d.push({',
-    '    title: "✖ 清空",',
-    '    url: $("#noLoading#").lazyRule(function(kk, tk){',
-    '      putVar({key: kk, value: ""});',
-    '      putVar({key: tk, value: ""});',
-    '      refreshPage(false);',
-    '      return "hiker://empty";',
-    '    }, "' + KW_KEY + '", "' + KW_TMP_KEY + '"),',
-    '    col_type: "scroll_button"',
-    '  });',
-    // 自 fetch 搜索 URL (path 形式 + 固定 page=1, 我们自己 request 不走 ArticleListModel)
-    '  var __sUrl = "https://www.zlykw.com/vodsearch/" + encodeURIComponent(__kw) + "----------1---.html";',
-    '  var __sHtml = ""; try { __sHtml = request(__sUrl) || ""; } catch (e) { __sHtml = ""; }',
-    '  d.push({title: "🔍 搜索结果 (html.len=" + __sHtml.length + ")", col_type: "rich_text"});',
-    '  if (!__sHtml) {',
-    '    d.push({title: "⚠️ fetch 失败, 网络或 CF 拦了?", col_type: "rich_text"});',
-    '  } else {',
-    '    var __sList = []; try { __sList = pdfa(__sHtml, ".stui-vodlist&&li") || []; } catch (e) {}',
-    '    if (__sList.length === 0) {',
-    '      d.push({title: "未搜到 " + __kw, col_type: "rich_text"});',
-    '    } else {',
-    '      for (var __sj = 0; __sj < __sList.length; __sj++) {',
-    '        var __sli = __sList[__sj]; if (!__sli) continue;',
-    '        var __slink = ""; try { __slink = pd(__sli, "a&&href") || ""; } catch (e) {}',
-    // 跳广告占位
-    '        if (!__slink || __slink === "#" || __slink.charAt(__slink.length-1) === "#" || __slink.indexOf("javascript") === 0) continue;',
-    '        if (__slink.indexOf("http") !== 0 && __slink.charAt(0) === "/") __slink = "https://www.zlykw.com" + __slink;',
-    '        if (__slink.indexOf("http") !== 0) continue;',
-    '        var __st = ""; try { __st = pdfh(__sli, "a&&title") || ""; } catch (e) {}',
-    '        var __sdesc = ""; try { __sdesc = pdfh(__sli, ".pic-text&&Text") || ""; } catch (e) {}',
-    '        var __simg = ""; try { __simg = pd(__sli, "a&&data-original") || ""; } catch (e) {}',
-    '        d.push({',
-    '          title: __st || __slink,',
-    '          desc: __sdesc,',
-    '          pic_url: __simg ? (__simg + "@Referer=https://www.zlykw.com/") : "",',
-    '          url: __slink + "#immersiveTheme##autoCache#@rule=js:$.require(\\"er\\")"',
-    '        });',
-    '      }',
-    '    }',
-    '  }',
-    '  setResult(d);',
-    '} else {',
-    // 原 find_rule 主体放这里
-].join('\n');
-
-if (rule.find_rule && !/v2026-05-31-[a-z]/.test(rule.find_rule)) {
-    // 提取原 find_rule 主体 (去 js: 前缀 + 去首行 var d = []), 防与新 d 重复
-    const origBody = rule.find_rule
-        .replace(/^js:\n?/, '')
-        .replace(/^var d = \[\];\n?/, '');
-    rule.find_rule =
-        'js:\n' +
-        'var d = [];\n' +
-        SEARCH_BLOCK + '\n' +
-        origBody + '\n' +
-        '}';   // 关 else 块
-    console.log('  ✓ find_rule: 注入自实现搜索块 (' + VERSION_TAG + ')');
+if (rule.search_url && /&amp;/.test(rule.search_url)) {
+    rule.search_url = rule.search_url.replace(/&amp;/g, '&');
+    console.log('  ✓ search_url: 去 &amp; HTML entity (最小修复)');
 }
+// searchFind 不动 — 原作者写法本就 OK
 
-// ============================
-// searchFind 整段重写: 加广告过滤 + 硬 link 校验 + DEBUG 卡片
-// 修 ArticleListModel 'Expected URL scheme http/https but was error':
-// 怀疑某条 push 的 url 是 'error://...' (海阔 pd fallback), ArticleListModel
-// 拿到去 fetch 就炸。所有 url 必须以 http/https 开头才 push。
-// ============================
-rule.searchFind = [
-    'js:',
-    'var d = [];',
-    'var host = "https://www.zlykw.com";',
-    'var __html = "";',
-    'try { __html = getResCode() || ""; } catch (e) { __html = ""; }',
-    'd.push({ title: "🔍 SEARCH DEBUG: html.len=" + __html.length, col_type: "rich_text" });',
-    'if (!__html) {',
-    '  d.push({ title: "⚠️ 搜索页 HTML 为空, 可能 search_url 模板出错 / 服务端 4xx / 海阔 fetch 失败", col_type: "rich_text" });',
-    '} else {',
-    '  var list = pdfa(__html, ".stui-vodlist&&li") || [];',
-    '  d.push({ title: "🔍 SEARCH DEBUG: list.length=" + list.length, col_type: "rich_text" });',
-    '  for (var j = 0; j < list.length; j++) {',
-    '    var li = list[j];',
-    '    if (!li) continue;',
-    '    var link = ""; try { link = pd(li, "a&&href") || ""; } catch (e) {}',
-    '    // 跳广告 li (href="#" / 空 / "javascript:" 之类)',
-    '    if (!link || link === "#" || link.charAt(link.length - 1) === "#" || link.indexOf("javascript") === 0) continue;',
-    '    // 补全相对路径',
-    '    if (link.indexOf("http") !== 0 && link.charAt(0) === "/") link = host + link;',
-    '    // 硬校验: 最终 url 必须以 http/https 开头, 否则跳过 (防 error:// 这类 fallback)',
-    '    if (link.indexOf("http") !== 0) continue;',
-    '    var t = ""; try { t = pdfh(li, "a&&title") || ""; } catch (e) {}',
-    '    var desc = ""; try { desc = pdfh(li, ".pic-text&&Text") || ""; } catch (e) {}',
-    '    var img = ""; try { img = pd(li, "a&&data-original") || ""; } catch (e) {}',
-    '    d.push({',
-    '      title: t || link,',
-    '      desc: desc,',
-    '      img: img ? (img + "@Referer=https://www.zlykw.com/") : "",',
-    '      url: link + "#immersiveTheme##autoCache#@rule=js:$.require(\\"er\\")"',
-    '    });',
-    '  }',
-    '}',
-    'setResult(d);'
-].join('\n');
-console.log('  ✓ searchFind: 整段重写 (DEBUG + 硬 url 校验)');
+// searchFind 不重写 — 原作者本来就 OK, 之前重写是为了排查 error scheme
+// 但其实 error 不在 searchFind, 是别的后处理副作用. 保持原版.
 
 // ============================
 // 硬化: find_rule 里那些 `const 中文名 = ...` 改成 `var`,
@@ -323,27 +190,10 @@ if (rule.pages) {
             rule.pages = JSON.stringify(pagesArr);
         }
 
-        // === dt 子页 fix: 删原作者的 hiker://search input ===
-        // 原作者在分类页 dt 子页里放了:
-        //   s.push({ title: "搜索", url: "'hiker://search?rule=" + MY_RULE.title + "&s='input", col_type: "input" })
-        // 用户在 dt 子页 input 输入触发 hiker://search → 海阔调本规则的 v2 search_url (已被
-        // 清空) → 内部 fallback 产生 error://...  url → ArticleListModel 报
-        // 'Expected URL scheme error'.
-        // 直接删这段, find_rule 顶部已有自实现搜索 input.
-        const dt = pagesArr.find(p => p.path === 'dt' || p.name === 'dt');
-        if (dt && /hiker:\/\/search\?rule="\s*\+\s*MY_RULE\.title/.test(dt.rule)) {
-            const before = dt.rule;
-            dt.rule = dt.rule.replace(
-                /s\.push\(\{[\s\S]{0,200}?hiker:\/\/search[\s\S]{0,100}?\}\);/,
-                '/* 原作者 hiker://search input 已禁用 — 触发 v2 search_url 报 error scheme, 改用 find_rule 顶部自实现搜索 */'
-            );
-            if (dt.rule !== before) {
-                console.log('  ✓ dt 子页: 删 hiker://search input (修真正的 ArticleListModel error scheme 源头!)');
-                rule.pages = JSON.stringify(pagesArr);
-            } else {
-                console.warn('  ⚠️ dt 子页 hiker://search input 替换 regex 没命中');
-            }
-        }
+        // === dt 子页 hiker://search input 保留 ===
+        //   原作者写的 input 用 'hiker://search?rule=" + MY_RULE.title + "&s='input
+        //   走海阔 v2 跳搜索界面流程. 我们不动它, 让原版工作流跑.
+        //   (之前删过, 但同时清了 search_url 才出错, 现在恢复原版自然 OK)
 
         // === lazy 子页 fix: var 声明 → expression statement ===
         // 原作者: `var lazy = $('').lazyRule(() => {...})`
