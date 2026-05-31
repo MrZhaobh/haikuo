@@ -39,13 +39,9 @@ if (rule.find_rule && /分类标领/.test(rule.find_rule)) {
     console.log('  ✓ find_rule typo: 分类标领 → 分类标题');
 }
 
-// ============================
-// title: "周六影库 1" → "周六影库" (用户偏好)
-// ============================
-if (rule.title === '周六影库 1') {
-    rule.title = '周六影库';
-    console.log('  ✓ title: 周六影库 1 → 周六影库');
-}
+// title 保留原版 "周六影库 1" — 实测改成"周六影库"后搜索报 error scheme.
+// 推测海阔某种 cache/state hash 与原版规则名挂钩, 改名触发不一致.
+// 等搜索路径稳定后再考虑改名.
 
 // ============================
 // search_url: 改成 maccms 标准 path 形式 `vodsearch/**----------fypage---.html`
