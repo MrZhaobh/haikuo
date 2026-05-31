@@ -76,10 +76,114 @@ if (rule.pages) {
 }
 
 // ============================
-// 纯透传: 用 Object.assign 保留所有原字段, 不做任何字段裁剪
+// 纯透传: 用 Object.assign 保留所有原字段 (memory: preserve_all_fields)
 // ============================
 const v2 = Object.assign({}, rule);
 const title = v2.title || titleFromToken;
+
+// ============================
+// 但 v2 search_url 路径必须绕开 (memory: ArticleListModel error scheme)
+// 触发链: dt 子页 hiker://search input → 海阔走 v2 search_url 模板 →
+// 内部产生 error:// 占位 URL → ArticleListModel HttpRequestError
+//
+// 修法 3 步 (字段值改, 字段不删):
+//   a. search_url 清空 → 海阔不暴露 v2 搜索框
+//   b. dt 子页 hiker://search input 删 → 不再触发 v2 search 调度
+//   c. find_rule 顶部加自实现搜索块 → 自 fetch + 自渲染 (绕过 ArticleListModel)
+// ============================
+
+v2.search_url = '';
+v2.searchFind = '';
+
+const SEARCH_HEAD = [
+    'd.push({title: "🏷️ v2026-05-31-h (passthrough+自实现搜索)", col_type: "rich_text"});',
+    'var __kwKey = "周六影库_kw";',
+    'var __kwTmpKey = "周六影库_kw_tmp";',
+    'var __kw = getVar(__kwKey, "");',
+    'var __kwTmp = getVar(__kwTmpKey, __kw);',
+    'd.push({',
+    '  desc: __kw ? "当前: " + __kw : "🔍 输入关键词后点搜索...",',
+    '  col_type: "input",',
+    '  extra: {',
+    '    defaultValue: __kwTmp,',
+    '    titleVisible: false,',
+    '    onChange: \'putVar({key:"周六影库_kw_tmp",value:input})\'',
+    '  }',
+    '});',
+    'd.push({',
+    '  title: "🔍 搜索",',
+    '  url: $("#noLoading#").lazyRule(function(){',
+    '    var t = getVar("周六影库_kw_tmp", "");',
+    '    if (t && t !== getVar("周六影库_kw","")) { putVar({key:"周六影库_kw", value:t}); refreshPage(false); }',
+    '    return "hiker://empty";',
+    '  }),',
+    '  col_type: "scroll_button"',
+    '});',
+    'if (__kw) {',
+    '  d.push({',
+    '    title: "✖ 清空",',
+    '    url: $("#noLoading#").lazyRule(function(){ putVar({key:"周六影库_kw",value:""}); putVar({key:"周六影库_kw_tmp",value:""}); refreshPage(false); return "hiker://empty"; }),',
+    '    col_type: "scroll_button"',
+    '  });',
+    '  var __sUrl = "https://www.zlykw.com/vodsearch/" + encodeURIComponent(__kw) + "----------1---.html";',
+    '  var __sHtml = ""; try { __sHtml = request(__sUrl) || ""; } catch (e) { __sHtml = ""; }',
+    '  if (!__sHtml) {',
+    '    d.push({title: "⚠️ 搜索请求失败 (网络 / CF)", col_type: "rich_text"});',
+    '  } else {',
+    '    var __sList = []; try { __sList = pdfa(__sHtml, ".stui-vodlist&&li") || []; } catch (e) {}',
+    '    var __pushed = 0;',
+    '    for (var __sj = 0; __sj < __sList.length; __sj++) {',
+    '      var __sli = __sList[__sj]; if (!__sli) continue;',
+    '      var __slink = ""; try { __slink = pd(__sli, "a&&href") || ""; } catch (e) {}',
+    '      if (!__slink || __slink === "#" || __slink.charAt(__slink.length-1) === "#" || __slink.indexOf("javascript") === 0) continue;',
+    '      if (__slink.indexOf("http") !== 0 && __slink.charAt(0) === "/") __slink = "https://www.zlykw.com" + __slink;',
+    '      if (__slink.indexOf("http") !== 0) continue;',
+    '      var __st = ""; try { __st = pdfh(__sli, "a&&title") || ""; } catch (e) {}',
+    '      var __sdesc = ""; try { __sdesc = pdfh(__sli, ".pic-text&&Text") || ""; } catch (e) {}',
+    '      var __simg = ""; try { __simg = pd(__sli, "a&&data-original") || ""; } catch (e) {}',
+    '      d.push({',
+    '        title: __st || __slink,',
+    '        desc: __sdesc,',
+    '        pic_url: __simg ? (__simg + "@Referer=https://www.zlykw.com/") : "",',
+    '        url: __slink + "#immersiveTheme##autoCache#@rule=js:$.require(\\"er\\")"',
+    '      });',
+    '      __pushed++;',
+    '    }',
+    '    if (__pushed === 0) d.push({title: "未搜到 " + __kw + " (html.len=" + __sHtml.length + ")", col_type: "rich_text"});',
+    '  }',
+    '  setResult(d);',
+    '} else {'
+].join('\n');
+
+if (v2.find_rule) {
+    const origBody = v2.find_rule
+        .replace(/^js:\n?/, '')
+        .replace(/^var d = \[\];\n?/, '');
+    v2.find_rule = 'js:\nvar d = [];\n' + SEARCH_HEAD + '\n' + origBody + '\n}';
+    console.log('  ✓ find_rule: 注入自实现搜索块 (v2026-05-31-h)');
+}
+
+if (v2.pages) {
+    try {
+        const pagesArr = JSON.parse(v2.pages);
+        const dt = pagesArr.find(p => p.path === 'dt' || p.name === 'dt');
+        if (dt && /hiker:\/\/search\?rule=/.test(dt.rule)) {
+            const before = dt.rule;
+            dt.rule = dt.rule.replace(
+                /s\.push\(\{\s*\n?\s*title:\s*"搜索"[\s\S]*?col_type:\s*"input"[\s\S]*?\}\);/,
+                '/* 原作者 hiker://search input 删除 — 触发 v2 search_url 报 error scheme */'
+            );
+            if (dt.rule !== before) {
+                console.log('  ✓ dt 子页: 删 hiker://search input');
+                v2.pages = JSON.stringify(pagesArr);
+            } else {
+                console.warn('  ⚠️ dt 子页 hiker://search input 替换 regex 没命中');
+            }
+        }
+    } catch (e) {
+        console.error('  pages 处理 FAIL:', e.message);
+    }
+}
 
 // ============================
 // 输出 7 件套
@@ -110,8 +214,11 @@ searchKeys.forEach(k => { if (k in v2) searchOnly[k] = v2[k]; });
 fs.writeFileSync(path.join(OUT, 'token-search.txt'),
     '海阔视界规则分享，当前分享的是：搜索引擎￥search_rule_v2￥' + JSON.stringify(searchOnly), 'utf8');
 
-// token-quick.txt: 直接复用 token-quick-original.txt 内容, 保证字节级一致
-fs.writeFileSync(path.join(OUT, 'token-quick.txt'), raw, 'utf8');
+// token-quick.txt: 修改后的 rule re-encode (字段修改 + base64 重新打包)
+const miniB64 = Buffer.from(JSON.stringify(v2), 'utf8').toString('base64');
+fs.writeFileSync(path.join(OUT, 'token-quick.txt'),
+    '海阔视界规则分享，当前分享的是：小程序￥home_rule_v2￥base64://@' + title + '@' + miniB64,
+    'utf8');
 
 console.log('\n--- output (7 files) ---');
 ['clipboard.json', 'single.json', 'share.txt',
