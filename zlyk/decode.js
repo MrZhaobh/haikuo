@@ -54,17 +54,9 @@ if (rule.title === '周六影库 1') {
 // 同款 maccms 主题的麦田 (mtyy5.cc) 用的就是 path 形式, 实测 zlykw.com 也支持
 // (curl `vodsearch/<kw>----------1---.html` 返 200 + 9 结果含"四季情第一季")
 // ============================
-// ============================
-// search_url: 最小修复 — 只去 HTML entity `&amp;` → `&`
-//   (其他模板形式我们试过但都"修破"了 v2 schema, 既然别人能跑通原版,
-//    我们回到最少修改, 保持原作者意图. 如果用户海阔仍报 error scheme,
-//    再考虑别的策略)
-// ============================
-if (rule.search_url && /&amp;/.test(rule.search_url)) {
-    rule.search_url = rule.search_url.replace(/&amp;/g, '&');
-    console.log('  ✓ search_url: 去 &amp; HTML entity (最小修复)');
-}
-// searchFind 不动 — 原作者写法本就 OK
+// search_url 完全不动 — 实测去 &amp; 反而触发 ArticleListModel error scheme,
+//   海阔 v2 schema 可能就期待 &amp; HTML entity 形式 (内部 decode 一次)
+// searchFind 也不动 — 原作者写法本就 OK
 
 // searchFind 不重写 — 原作者本来就 OK, 之前重写是为了排查 error scheme
 // 但其实 error 不在 searchFind, 是别的后处理副作用. 保持原版.
