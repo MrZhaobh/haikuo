@@ -69,26 +69,45 @@ console.log('  ✓ search_url + searchFind 清空 (改 find_rule 内自实现搜
 // ============================
 // find_rule 自实现搜索块 + 包装原列表代码
 // ============================
-const VERSION_TAG = 'v2026-05-31-e (删 dt hiker://search input)';
+const VERSION_TAG = 'v2026-05-31-f (按钮触发搜索)';
 const KW_KEY = '周六影库_kw';
+const KW_TMP_KEY = '周六影库_kw_tmp';
 const SEARCH_BLOCK = [
-    // 版本号 + 搜索 input (always show)
+    // 版本号
     'd.push({title: "🏷️ ' + VERSION_TAG + '", col_type: "rich_text"});',
     'var __kw = getVar("' + KW_KEY + '", "");',
+    // input: onChange 只暂存到 _tmp, 不触发 refreshPage (不实时搜)
     'd.push({',
-    '  desc: __kw ? "当前: " + __kw : "🔍 搜你想看的...",',
+    '  desc: __kw ? "当前搜索: " + __kw : "🔍 输入后点【搜索】按钮",',
     '  col_type: "input",',
     '  extra: {',
     '    defaultValue: __kw,',
     '    titleVisible: false,',
-    '    onChange: \'if(input!==getVar("' + KW_KEY + '","")){putVar({key:"' + KW_KEY + '",value:input});refreshPage(false)}\'',
+    '    onChange: \'putVar({key:"' + KW_TMP_KEY + '",value:input})\'',
     '  }',
     '});',
+    // 搜索按钮 + 清空按钮 (两列 scroll_button)
+    'd.push({',
+    '  title: "🔍 搜索",',
+    '  url: $("#noLoading#").lazyRule(function(kk, tk){',
+    '    var tmp = getVar(tk, "");',
+    '    if (!tmp) return "toast://请先在上方输入搜索词";',
+    '    if (tmp === getVar(kk, "")) return "toast://已是当前搜索词";',
+    '    putVar({key: kk, value: tmp});',
+    '    refreshPage(false);',
+    '    return "hiker://empty";',
+    '  }, "' + KW_KEY + '", "' + KW_TMP_KEY + '"),',
+    '  col_type: "scroll_button"',
+    '});',
     'if (__kw) {',
-    // 清空按钮
     '  d.push({',
-    '    title: "✖ 清空搜索",',
-    '    url: $("#noLoading#").lazyRule(function(k){ putVar({key:k, value:""}); refreshPage(false); return "hiker://empty"; }, "' + KW_KEY + '"),',
+    '    title: "✖ 清空",',
+    '    url: $("#noLoading#").lazyRule(function(kk, tk){',
+    '      putVar({key: kk, value: ""});',
+    '      putVar({key: tk, value: ""});',
+    '      refreshPage(false);',
+    '      return "hiker://empty";',
+    '    }, "' + KW_KEY + '", "' + KW_TMP_KEY + '"),',
     '    col_type: "scroll_button"',
     '  });',
     // 自 fetch 搜索 URL (path 形式 + 固定 page=1, 我们自己 request 不走 ArticleListModel)
